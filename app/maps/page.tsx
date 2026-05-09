@@ -6,6 +6,7 @@ import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { MindMap } from "@/types";
+import { APP_VERSION } from "@/lib/version";
 
 export default function MapsPage() {
   const { user, loading, signOut } = useAuth();
@@ -101,7 +102,10 @@ export default function MapsPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-4 shrink-0">
-        <h1 className="text-xl font-bold text-gray-900 shrink-0">FutaMindMap</h1>
+        <div className="flex items-baseline gap-2 shrink-0">
+          <h1 className="text-xl font-bold text-gray-900">FutaMindMap</h1>
+          <span className="text-xs text-gray-300 font-mono">v{APP_VERSION}</span>
+        </div>
         <div className="flex-1 max-w-md">
           <input
             value={searchQuery}
