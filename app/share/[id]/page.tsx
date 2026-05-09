@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { MindMap } from "@/types";
@@ -41,7 +42,7 @@ export default function SharePage() {
       <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shrink-0">
         <span className="text-lg font-semibold text-gray-800 flex-1">{map.title}</span>
         <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">閲覧のみ</span>
-        <a href="/" className="text-xs text-indigo-500 hover:underline">FutaMindMapを使う</a>
+        <Link href="/" className="text-xs text-indigo-500 hover:underline">FutaMindMapを使う</Link>
       </header>
       <div className="flex-1 overflow-hidden">
         <MindMapCanvas initialNodes={map.nodes} onNodesChange={() => {}} readOnly />
