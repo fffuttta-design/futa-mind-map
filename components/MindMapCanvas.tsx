@@ -12,7 +12,6 @@ interface Props {
 }
 
 const NODE_H = 34;
-const NODE_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#8b5cf6", "#ec4899"];
 
 function nodeWidth(node: MindMapNode): number {
   const base = Math.max(80, Math.min(220, node.text.length * 8.5 + 48));
@@ -29,7 +28,7 @@ function nodeHeight(node: MindMapNode): number {
 
 function NodeShape({ node, w, h, isSelected }: { node: MindMapNode; w: number; h: number; isSelected: boolean }) {
   const fill = node.color;
-  const fillOp = isSelected ? 1 : 0.88;
+  const fillOp = 1;
   const stroke = isSelected ? "#1e293b" : "transparent";
   const sw = 2.5;
   switch (node.shape ?? "pill") {
@@ -91,6 +90,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   const [panStart, setPanStart] = useState<{ mx: number; my: number; px: number; py: number } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [svgSize, setSvgSize] = useState({ w: 800, h: 600 });
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number } | null>(null);
   const [editorStyle, setEditorStyle] = useState<{ left: number; top: number; width: number; height: number; fontSize: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -165,7 +165,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
       x: parent.x + 240,
       y: parent.y + siblings.length * 64 - Math.max(0, siblings.length - 1) * 32,
       parentId,
-      color: parent.id === "root" ? NODE_COLORS[siblings.length % NODE_COLORS.length] : parent.color,
+      color: parent.color,
     };
     updateNodes([...nodes.map(n => n.id === parentId ? { ...n, collapsed: false } : n), newNode]);
     setSelectedIds(new Set([newNode.id]));
@@ -348,6 +348,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
               <g key={node.id}
                 transform={`translate(${node.x},${node.y})`}
                 onMouseDown={e => onNodeMouseDown(e, node.id)}
+                onMouseEnter={() => { if (!readOnly) setHoveredId(node.id); }}
+                onMouseLeave={() => setHoveredId(null)}
                 onDoubleClick={e => {
                   if (readOnly) return;
                   e.stopPropagation();
@@ -382,6 +384,30 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                       {node.collapsed ? `+${nodes.filter(n => n.parentId === node.id).length}` : "−"}
                     </text>
                   </g>
+                )}
+                {!readOnly && hoveredId === node.id && (
+                  <>
+                    <g
+                      transform={`translate(${w / 2 + (hasChildren ? 36 : 14)}, 0)`}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); addChild(node.id); }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <circle r={10} fill="#6366f1" />
+                      <text textAnchor="middle" dominantBaseline="middle" fontSize={16} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>+</text>
+                    </g>
+                    {node.parentId && (
+                      <g
+                        transform={`translate(0, ${h / 2 + 16})`}
+                        onMouseDown={e => e.stopPropagation()}
+                        onClick={e => { e.stopPropagation(); addSibling(node.id); }}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <circle r={10} fill="#6366f1" />
+                        <text textAnchor="middle" dominantBaseline="middle" fontSize={16} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>+</text>
+                      </g>
+                    )}
+                  </>
                 )}
               </g>
             );
