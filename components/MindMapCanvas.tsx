@@ -7,6 +7,8 @@ import NodePropertiesPanel from "./NodePropertiesPanel";
 interface Props {
   initialNodes: MindMapNode[];
   onNodesChange: (nodes: MindMapNode[]) => void;
+  readOnly?: boolean;
+  exportRef?: React.MutableRefObject<{ exportSVG: () => void; exportPNG: () => void } | null>;
 }
 
 const NODE_H = 34;
@@ -16,7 +18,52 @@ function nodeWidth(text: string) {
   return Math.max(80, Math.min(220, text.length * 8.5 + 48));
 }
 
-export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
+function buildExportSVG(nodes: MindMapNode[], title = "mindmap"): string {
+  const pad = 60;
+  const widths = nodes.map(n => nodeWidth(n.text));
+  const xs = nodes.map((n, i) => [n.x - widths[i] / 2, n.x + widths[i] / 2]).flat();
+  const ys = nodes.map(n => [n.y - NODE_H / 2, n.y + NODE_H / 2]).flat();
+  const minX = Math.min(...xs) - pad;
+  const minY = Math.min(...ys) - pad;
+  const maxX = Math.max(...xs) + pad;
+  const maxY = Math.max(...ys) + pad;
+  const W = maxX - minX;
+  const H = maxY - minY;
+
+  const visibleIds = new Set(nodes.map(n => n.id));
+
+  const edges = nodes
+    .filter(n => n.parentId && visibleIds.has(n.parentId))
+    .map(n => {
+      const p = nodes.find(x => x.id === n.parentId)!;
+      const pw = nodeWidth(p.text);
+      const nw = nodeWidth(n.text);
+      const x1 = p.x + pw / 2, y1 = p.y, x2 = n.x - nw / 2, y2 = n.y;
+      const cx = (x1 + x2) / 2;
+      return `<path d="M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>`;
+    }).join("\n");
+
+  const nodeEls = nodes.map(node => {
+    const w = nodeWidth(node.text);
+    const label = node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text;
+    const iconEl = node.icon ? `<text x="${node.x - w / 2 + 16}" y="${node.y}" text-anchor="middle" dominant-baseline="middle" font-size="14">${node.icon}</text>` : "";
+    const textX = node.icon ? node.x + 8 : node.x;
+    return `
+<rect x="${node.x - w / 2}" y="${node.y - NODE_H / 2}" width="${w}" height="${NODE_H}" rx="${NODE_H / 2}" fill="${node.color}" fill-opacity="0.9"/>
+${iconEl}
+<text x="${textX}" y="${node.y}" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="13" font-weight="500" font-family="sans-serif">${label}</text>`;
+  }).join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">
+  <rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>
+  <title>${title}</title>
+  ${edges}
+  ${nodeEls}
+</svg>`;
+}
+
+export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = false, exportRef }: Props) {
   const [nodes, setNodes] = useState<MindMapNode[]>(initialNodes);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -28,7 +75,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
   const [showPanel, setShowPanel] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const bgRef = useRef<SVGRectElement>(null);
 
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null;
 
@@ -100,12 +146,50 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
     updateNodes(nodes.map(n => n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n));
   }, [nodes, updateNodes]);
 
+  // Export functions
+  const exportSVG = useCallback(() => {
+    const svgStr = buildExportSVG(nodes, "mindmap");
+    const blob = new Blob([svgStr], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "mindmap.svg"; a.click();
+    URL.revokeObjectURL(url);
+  }, [nodes]);
+
+  const exportPNG = useCallback(() => {
+    const svgStr = buildExportSVG(nodes, "mindmap");
+    const pad = 60;
+    const widths = nodes.map(n => nodeWidth(n.text));
+    const xs = nodes.map((n, i) => [n.x - widths[i] / 2, n.x + widths[i] / 2]).flat();
+    const ys = nodes.map(n => [n.y - NODE_H / 2, n.y + NODE_H / 2]).flat();
+    const W = (Math.max(...xs) - Math.min(...xs) + pad * 2) * 2;
+    const H = (Math.max(...ys) - Math.min(...ys) + pad * 2) * 2;
+    const blob = new Blob([svgStr], { type: "image/svg+xml" });
+    const svgUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#f9fafb";
+      ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(img, 0, 0, W, H);
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = "mindmap.png"; a.click();
+      URL.revokeObjectURL(svgUrl);
+    };
+    img.src = svgUrl;
+  }, [nodes]);
+
   useEffect(() => {
+    if (exportRef) exportRef.current = { exportSVG, exportPNG };
+  }, [exportRef, exportSVG, exportPNG]);
+
+  useEffect(() => {
+    if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
-      if (editingId) {
-        if (e.key === "Escape") setEditingId(null);
-        return;
-      }
+      if (editingId) { if (e.key === "Escape") setEditingId(null); return; }
       if (selectedIds.size === 0) return;
       const id = [...selectedIds][0];
       if (e.key === "Tab") { e.preventDefault(); addChild(id); }
@@ -119,7 +203,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedIds, editingId, addChild, addSibling, deleteNodes, nodes]);
+  }, [selectedIds, editingId, addChild, addSibling, deleteNodes, nodes, readOnly]);
 
   useEffect(() => {
     if (editingId && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
@@ -133,6 +217,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
   };
 
   const onNodeMouseDown = (e: React.MouseEvent, nodeId: string) => {
+    if (readOnly) return;
     e.stopPropagation();
     if (e.shiftKey) {
       setSelectedIds(prev => { const s = new Set(prev); s.has(nodeId) ? s.delete(nodeId) : s.add(nodeId); return s; });
@@ -146,8 +231,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
 
   const onBgMouseDown = (e: React.MouseEvent) => {
     if (editingId) commitEdit();
-    setSelectedIds(new Set());
-    setShowPanel(false);
+    if (!readOnly) { setSelectedIds(new Set()); setShowPanel(false); }
     setPanStart({ mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y });
   };
 
@@ -174,8 +258,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
   const visibleIds = new Set(visible.map(n => n.id));
   const svgW = svgRef.current?.clientWidth ?? 800;
   const svgH = svgRef.current?.clientHeight ?? 600;
-  const tx = svgW / 2 + pan.x;
-  const ty = svgH / 2 + pan.y;
 
   const edgePath = (x1: number, y1: number, x2: number, y2: number) => {
     const cx = (x1 + x2) / 2;
@@ -193,49 +275,40 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
         onMouseLeave={onMouseUp}
         onWheel={onWheel}
       >
-        <rect
-          ref={bgRef}
-          width="100%" height="100%"
-          fill="transparent"
-          onMouseDown={onBgMouseDown}
-        />
-        <g transform={`translate(${tx},${ty}) scale(${zoom})`}>
-          {/* Edges */}
+        <rect width="100%" height="100%" fill="transparent" onMouseDown={onBgMouseDown} />
+        <g transform={`translate(${svgW / 2 + pan.x},${svgH / 2 + pan.y}) scale(${zoom})`}>
           {visible.filter(n => n.parentId && visibleIds.has(n.parentId)).map(n => {
             const p = nodes.find(x => x.id === n.parentId)!;
             const pw = nodeWidth(p.text);
             const nw = nodeWidth(n.text);
             return (
-              <path
-                key={`e-${n.id}`}
+              <path key={`e-${n.id}`}
                 d={edgePath(p.x + pw / 2, p.y, n.x - nw / 2, n.y)}
-                fill="none"
-                stroke={n.color}
-                strokeWidth={2}
-                strokeOpacity={0.45}
+                fill="none" stroke={n.color} strokeWidth={2} strokeOpacity={0.45}
               />
             );
           })}
 
-          {/* Nodes */}
           {visible.map(node => {
             const w = nodeWidth(node.text);
             const isSelected = selectedIds.has(node.id);
             const hasChildren = nodes.some(n => n.parentId === node.id);
             const hiddenCount = node.collapsed ? nodes.filter(n => n.parentId === node.id).length : 0;
+            const hasImage = !!node.imageUrl;
+            const totalH = hasImage ? NODE_H + 44 : NODE_H;
 
             return (
-              <g
-                key={node.id}
+              <g key={node.id}
                 transform={`translate(${node.x},${node.y})`}
                 onMouseDown={e => onNodeMouseDown(e, node.id)}
                 onDoubleClick={e => {
+                  if (readOnly) return;
                   e.stopPropagation();
                   setSelectedIds(new Set([node.id]));
                   setEditingId(node.id);
                   setEditText(node.text);
                 }}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: readOnly ? "default" : "pointer" }}
               >
                 <rect
                   x={-w / 2} y={-NODE_H / 2}
@@ -254,11 +327,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
                 {editingId !== node.id && (
                   <text
                     x={node.icon ? 8 : 0}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill="white"
-                    fontSize={13}
-                    fontWeight={500}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fill="white" fontSize={13} fontWeight={500}
                     style={{ pointerEvents: "none" }}
                   >
                     {node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text}
@@ -267,9 +337,19 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
                 {node.note && <circle cx={w / 2 - 6} cy={-NODE_H / 2 + 6} r={4} fill="#fbbf24" style={{ pointerEvents: "none" }} />}
                 {node.url && <circle cx={w / 2 - (node.note ? 16 : 6)} cy={-NODE_H / 2 + 6} r={4} fill="#60a5fa" style={{ pointerEvents: "none" }} />}
 
-                {hasChildren && (
+                {hasImage && (
+                  <image
+                    href={node.imageUrl}
+                    x={-w / 2} y={NODE_H / 2 + 4}
+                    width={w} height={40}
+                    preserveAspectRatio="xMidYMid slice"
+                    style={{ borderRadius: 8, pointerEvents: "none" }}
+                  />
+                )}
+
+                {!readOnly && hasChildren && (
                   <g
-                    transform={`translate(${w / 2 + 12}, 0)`}
+                    transform={`translate(${w / 2 + 12}, ${hasImage ? totalH / 2 - NODE_H / 2 : 0})`}
                     onClick={e => { e.stopPropagation(); toggleCollapse(node.id); }}
                     style={{ cursor: "pointer" }}
                   >
@@ -285,8 +365,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
         </g>
       </svg>
 
-      {/* Inline editor */}
-      {editingId && (() => {
+      {!readOnly && editingId && (() => {
         const node = nodes.find(n => n.id === editingId);
         if (!node || !svgRef.current) return null;
         const r = svgRef.current.getBoundingClientRect();
@@ -304,57 +383,36 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
               if (e.key === "Escape") setEditingId(null);
               if (e.key === "Tab") { e.preventDefault(); commitEdit(); setTimeout(() => addChild(editingId!), 30); }
             }}
-            style={{
-              position: "absolute",
-              left: sx - w / 2,
-              top: sy - (NODE_H * zoom) / 2,
-              width: w,
-              height: NODE_H * zoom,
-              fontSize: 13 * zoom,
-            }}
+            style={{ position: "absolute", left: sx - w / 2, top: sy - (NODE_H * zoom) / 2, width: w, height: NODE_H * zoom, fontSize: 13 * zoom }}
             className="text-center font-medium text-white bg-transparent border-none outline-none px-2"
           />
         );
       })()}
 
-      {/* Toolbar */}
-      {selectedIds.size > 0 && !editingId && (
+      {!readOnly && selectedIds.size > 0 && !editingId && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
           {selectedId && (
-            <button
-              onClick={() => { setShowPanel(p => !p); }}
-              className="px-3 py-1.5 bg-white border border-gray-200 text-gray-600 text-xs rounded-lg hover:bg-gray-50 shadow-sm"
-            >
+            <button onClick={() => setShowPanel(p => !p)} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-600 text-xs rounded-lg hover:bg-gray-50 shadow-sm">
               ✏️ プロパティ
             </button>
           )}
           {selectedId && (
-            <button
-              onClick={() => addChild(selectedId)}
-              className="px-3 py-1.5 bg-indigo-500 text-white text-xs rounded-lg hover:bg-indigo-600 shadow-sm"
-            >
-              ＋ 子ノード (Tab)
+            <button onClick={() => addChild(selectedId)} className="px-3 py-1.5 bg-indigo-500 text-white text-xs rounded-lg hover:bg-indigo-600 shadow-sm">
+              ＋ 子 (Tab)
             </button>
           )}
           {selectedId && (
-            <button
-              onClick={() => addSibling(selectedId)}
-              className="px-3 py-1.5 bg-indigo-100 text-indigo-600 text-xs rounded-lg hover:bg-indigo-200 shadow-sm"
-            >
-              ＋ 兄弟ノード (Enter)
+            <button onClick={() => addSibling(selectedId)} className="px-3 py-1.5 bg-indigo-100 text-indigo-600 text-xs rounded-lg hover:bg-indigo-200 shadow-sm">
+              ＋ 兄弟 (Enter)
             </button>
           )}
-          <button
-            onClick={() => deleteNodes(selectedIds)}
-            className="px-3 py-1.5 bg-red-100 text-red-500 text-xs rounded-lg hover:bg-red-200 shadow-sm"
-          >
+          <button onClick={() => deleteNodes(selectedIds)} className="px-3 py-1.5 bg-red-100 text-red-500 text-xs rounded-lg hover:bg-red-200 shadow-sm">
             削除{selectedIds.size > 1 ? ` (${selectedIds.size})` : ""}
           </button>
         </div>
       )}
 
-      {/* Properties panel */}
-      {selectedId && showPanel && (
+      {!readOnly && selectedId && showPanel && (
         <NodePropertiesPanel
           node={nodes.find(n => n.id === selectedId)!}
           onUpdate={updated => updateNodes(nodes.map(n => n.id === selectedId ? updated : n))}
@@ -362,13 +420,18 @@ export default function MindMapCanvas({ initialNodes, onNodesChange }: Props) {
         />
       )}
 
-      {/* Shortcut hint */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white rounded-xl shadow-sm px-4 py-2 flex items-center gap-4 text-xs text-gray-400 border border-gray-100">
-        <span>Tab: 子ノード</span>
-        <span>Enter: 兄弟ノード</span>
-        <span>F2 / Space: 編集</span>
-        <span>Delete: 削除</span>
-        <span>Shift+クリック: 複数選択</span>
+        {readOnly ? (
+          <span>スクロール: ズーム　ドラッグ: 移動</span>
+        ) : (
+          <>
+            <span>Tab: 子ノード</span>
+            <span>Enter: 兄弟ノード</span>
+            <span>F2: 編集</span>
+            <span>Delete: 削除</span>
+            <span>Shift+クリック: 複数選択</span>
+          </>
+        )}
       </div>
     </div>
   );

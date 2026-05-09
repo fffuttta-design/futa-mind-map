@@ -8,6 +8,7 @@ export interface MindMapNode {
   icon?: string;
   note?: string;
   url?: string;
+  imageUrl?: string;
   collapsed?: boolean;
 }
 
@@ -18,4 +19,7 @@ export interface MindMap {
   ownerId: string;
   createdAt: number;
   updatedAt: number;
+  folder?: string;
+  tags?: string[];
+  isPublic?: boolean;
 }

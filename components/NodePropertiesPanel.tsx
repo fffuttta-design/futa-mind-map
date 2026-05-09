@@ -18,7 +18,7 @@ interface Props {
 }
 
 export default function NodePropertiesPanel({ node, onUpdate, onClose }: Props) {
-  const [tab, setTab] = useState<"style" | "note" | "url">("style");
+  const [tab, setTab] = useState<"style" | "note" | "url" | "image">("style");
 
   return (
     <div className="absolute right-4 top-16 w-64 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-10">
@@ -28,13 +28,13 @@ export default function NodePropertiesPanel({ node, onUpdate, onClose }: Props) 
       </div>
 
       <div className="flex border-b border-gray-100">
-        {(["style", "note", "url"] as const).map((t) => (
+        {(["style", "note", "url", "image"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`flex-1 py-2 text-xs font-medium transition-colors ${tab === t ? "text-indigo-600 border-b-2 border-indigo-500" : "text-gray-400 hover:text-gray-600"}`}
           >
-            {t === "style" ? "スタイル" : t === "note" ? "メモ" : "URL"}
+            {t === "style" ? "スタイル" : t === "note" ? "メモ" : t === "url" ? "URL" : "画像"}
           </button>
         ))}
       </div>
@@ -50,11 +50,7 @@ export default function NodePropertiesPanel({ node, onUpdate, onClose }: Props) 
                     key={c}
                     onClick={() => onUpdate({ ...node, color: c })}
                     className="w-8 h-8 rounded-full transition-transform hover:scale-110"
-                    style={{
-                      backgroundColor: c,
-                      outline: node.color === c ? "2.5px solid #1e293b" : "none",
-                      outlineOffset: 2,
-                    }}
+                    style={{ backgroundColor: c, outline: node.color === c ? "2.5px solid #1e293b" : "none", outlineOffset: 2 }}
                   />
                 ))}
               </div>
@@ -65,17 +61,13 @@ export default function NodePropertiesPanel({ node, onUpdate, onClose }: Props) 
                 <button
                   onClick={() => onUpdate({ ...node, icon: undefined })}
                   className={`w-7 h-7 rounded text-xs flex items-center justify-center border transition-colors ${!node.icon ? "border-indigo-400 bg-indigo-50" : "border-gray-200 hover:border-gray-300"}`}
-                >
-                  ✕
-                </button>
+                >✕</button>
                 {ICONS.map((icon) => (
                   <button
                     key={icon}
                     onClick={() => onUpdate({ ...node, icon })}
                     className={`w-7 h-7 rounded text-sm flex items-center justify-center border transition-colors ${node.icon === icon ? "border-indigo-400 bg-indigo-50" : "border-gray-200 hover:border-gray-300"}`}
-                  >
-                    {icon}
-                  </button>
+                  >{icon}</button>
                 ))}
               </div>
             </div>
@@ -101,14 +93,36 @@ export default function NodePropertiesPanel({ node, onUpdate, onClose }: Props) 
               className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-400"
             />
             {node.url && (
-              <a
-                href={node.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-xs text-indigo-500 hover:underline truncate"
-              >
+              <a href={node.url} target="_blank" rel="noopener noreferrer" className="block text-xs text-indigo-500 hover:underline truncate">
                 {node.url}
               </a>
+            )}
+          </div>
+        )}
+
+        {tab === "image" && (
+          <div className="space-y-3">
+            <input
+              type="url"
+              value={node.imageUrl ?? ""}
+              onChange={(e) => onUpdate({ ...node, imageUrl: e.target.value })}
+              placeholder="画像URLを入力..."
+              className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-400"
+            />
+            {node.imageUrl && (
+              <div className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={node.imageUrl}
+                  alt="添付画像"
+                  className="w-full rounded-lg border border-gray-200 object-cover max-h-40"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+                <button
+                  onClick={() => onUpdate({ ...node, imageUrl: undefined })}
+                  className="absolute top-1 right-1 bg-white rounded-full w-5 h-5 flex items-center justify-center text-gray-400 hover:text-red-400 shadow text-xs"
+                >×</button>
+              </div>
             )}
           </div>
         )}
