@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MindMapNode } from "@/types";
-import NodePropertiesPanel from "./NodePropertiesPanel";
+import NodeToolbar from "./NodeToolbar";
 
 interface Props {
   initialNodes: MindMapNode[];
@@ -14,53 +14,77 @@ interface Props {
 const NODE_H = 34;
 const NODE_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#8b5cf6", "#ec4899"];
 
-function nodeWidth(text: string) {
-  return Math.max(80, Math.min(220, text.length * 8.5 + 48));
+function nodeWidth(node: MindMapNode): number {
+  const base = Math.max(80, Math.min(220, node.text.length * 8.5 + 48));
+  if (node.shape === "circle") return NODE_H * 2 + 8;
+  if (node.shape === "diamond") return base + 24;
+  return base;
 }
 
-function buildExportSVG(nodes: MindMapNode[], title = "mindmap"): string {
+function nodeHeight(node: MindMapNode): number {
+  const base = NODE_H;
+  if (node.shape === "circle") return NODE_H * 2 + 8;
+  if (node.shape === "diamond") return base + 16;
+  return base;
+}
+
+function NodeShape({ node, w, h, isSelected }: { node: MindMapNode; w: number; h: number; isSelected: boolean }) {
+  const fill = node.color;
+  const fillOp = isSelected ? 1 : 0.88;
+  const stroke = isSelected ? "#1e293b" : "transparent";
+  const sw = 2.5;
+  switch (node.shape ?? "pill") {
+    case "rect":
+      return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={4} fill={fill} fillOpacity={fillOp} stroke={stroke} strokeWidth={sw} />;
+    case "circle": {
+      const r = Math.max(w, h) / 2;
+      return <circle r={r} fill={fill} fillOpacity={fillOp} stroke={stroke} strokeWidth={sw} />;
+    }
+    case "diamond": {
+      const hw = w / 2, hh = h / 2;
+      return <polygon points={`0,${-hh} ${hw},0 0,${hh} ${-hw},0`} fill={fill} fillOpacity={fillOp} stroke={stroke} strokeWidth={sw} />;
+    }
+    default:
+      return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={h / 2} fill={fill} fillOpacity={fillOp} stroke={stroke} strokeWidth={sw} />;
+  }
+}
+
+function buildExportSVG(nodes: MindMapNode[]): string {
   const pad = 60;
-  const widths = nodes.map(n => nodeWidth(n.text));
-  const xs = nodes.map((n, i) => [n.x - widths[i] / 2, n.x + widths[i] / 2]).flat();
-  const ys = nodes.map(n => [n.y - NODE_H / 2, n.y + NODE_H / 2]).flat();
-  const minX = Math.min(...xs) - pad;
-  const minY = Math.min(...ys) - pad;
-  const maxX = Math.max(...xs) + pad;
-  const maxY = Math.max(...ys) + pad;
-  const W = maxX - minX;
-  const H = maxY - minY;
+  const allW = nodes.map(n => nodeWidth(n));
+  const allH = nodes.map(n => nodeHeight(n));
+  const xs = nodes.map((n, i) => [n.x - allW[i] / 2, n.x + allW[i] / 2]).flat();
+  const ys = nodes.map((n, i) => [n.y - allH[i] / 2, n.y + allH[i] / 2]).flat();
+  const minX = Math.min(...xs) - pad, minY = Math.min(...ys) - pad;
+  const W = Math.max(...xs) + pad - minX, H = Math.max(...ys) + pad - minY;
+  const vids = new Set(nodes.map(n => n.id));
 
-  const visibleIds = new Set(nodes.map(n => n.id));
-
-  const edges = nodes
-    .filter(n => n.parentId && visibleIds.has(n.parentId))
-    .map(n => {
-      const p = nodes.find(x => x.id === n.parentId)!;
-      const pw = nodeWidth(p.text);
-      const nw = nodeWidth(n.text);
-      const x1 = p.x + pw / 2, y1 = p.y, x2 = n.x - nw / 2, y2 = n.y;
-      const cx = (x1 + x2) / 2;
-      return `<path d="M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>`;
-    }).join("\n");
-
-  const nodeEls = nodes.map(node => {
-    const w = nodeWidth(node.text);
-    const label = node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text;
-    const iconEl = node.icon ? `<text x="${node.x - w / 2 + 16}" y="${node.y}" text-anchor="middle" dominant-baseline="middle" font-size="14">${node.icon}</text>` : "";
-    const textX = node.icon ? node.x + 8 : node.x;
-    return `
-<rect x="${node.x - w / 2}" y="${node.y - NODE_H / 2}" width="${w}" height="${NODE_H}" rx="${NODE_H / 2}" fill="${node.color}" fill-opacity="0.9"/>
-${iconEl}
-<text x="${textX}" y="${node.y}" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="13" font-weight="500" font-family="sans-serif">${label}</text>`;
+  const edges = nodes.filter(n => n.parentId && vids.has(n.parentId)).map(n => {
+    const p = nodes.find(x => x.id === n.parentId)!;
+    const x1 = p.x + nodeWidth(p) / 2, y1 = p.y, x2 = n.x - nodeWidth(n) / 2, y2 = n.y;
+    const cx = (x1 + x2) / 2;
+    return `<path d="M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>`;
   }).join("\n");
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">
-  <rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>
-  <title>${title}</title>
-  ${edges}
-  ${nodeEls}
-</svg>`;
+  const nodeEls = nodes.map(node => {
+    const w = nodeWidth(node), h = nodeHeight(node);
+    const label = node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text;
+    const fs = node.fontSize ?? 13;
+    const fw = node.fontBold ? "bold" : "500";
+    const tc = node.textColor ?? "white";
+    const iconEl = node.icon ? `<text x="${node.x - w / 2 + 16}" y="${node.y + 1}" text-anchor="middle" dominant-baseline="middle" font-size="14">${node.icon}</text>` : "";
+    const tx = node.icon ? node.x + 8 : node.x;
+    let shapeEl = "";
+    switch (node.shape ?? "pill") {
+      case "rect": shapeEl = `<rect x="${node.x - w / 2}" y="${node.y - h / 2}" width="${w}" height="${h}" rx="4" fill="${node.color}" fill-opacity="0.9"/>`; break;
+      case "circle": { const r = Math.max(w, h) / 2; shapeEl = `<circle cx="${node.x}" cy="${node.y}" r="${r}" fill="${node.color}" fill-opacity="0.9"/>`; break; }
+      case "diamond": shapeEl = `<polygon points="${node.x},${node.y - h / 2} ${node.x + w / 2},${node.y} ${node.x},${node.y + h / 2} ${node.x - w / 2},${node.y}" fill="${node.color}" fill-opacity="0.9"/>`; break;
+      default: shapeEl = `<rect x="${node.x - w / 2}" y="${node.y - h / 2}" width="${w}" height="${h}" rx="${h / 2}" fill="${node.color}" fill-opacity="0.9"/>`;
+    }
+    return `${shapeEl}\n${iconEl}\n<text x="${tx}" y="${node.y}" text-anchor="middle" dominant-baseline="middle" fill="${tc}" font-size="${fs}" font-weight="${fw}" font-family="sans-serif">${label}</text>`;
+  }).join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${nodeEls}\n</svg>`;
 }
 
 export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = false, exportRef }: Props) {
@@ -72,7 +96,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panStart, setPanStart] = useState<{ mx: number; my: number; px: number; py: number } | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [showPanel, setShowPanel] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -100,13 +123,12 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     const newNode: MindMapNode = {
       id: `node-${Date.now()}`,
       text: "新しいノード",
-      x: parent.x + 220,
-      y: parent.y + siblings.length * 60 - Math.max(0, siblings.length - 1) * 30,
+      x: parent.x + 240,
+      y: parent.y + siblings.length * 64 - Math.max(0, siblings.length - 1) * 32,
       parentId,
       color: parent.id === "root" ? NODE_COLORS[siblings.length % NODE_COLORS.length] : parent.color,
     };
-    const base = nodes.map(n => n.id === parentId ? { ...n, collapsed: false } : n);
-    updateNodes([...base, newNode]);
+    updateNodes([...nodes.map(n => n.id === parentId ? { ...n, collapsed: false } : n), newNode]);
     setSelectedIds(new Set([newNode.id]));
     setTimeout(() => { setEditingId(newNode.id); setEditText(newNode.text); }, 50);
   }, [nodes, updateNodes]);
@@ -118,7 +140,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
       id: `node-${Date.now()}`,
       text: "新しいノード",
       x: node.x,
-      y: node.y + 60,
+      y: node.y + 64,
       parentId: node.parentId,
       color: node.color,
     };
@@ -133,7 +155,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     ids.forEach(id => { if (id !== "root") collect(id); });
     updateNodes(nodes.filter(n => !toDelete.has(n.id)));
     setSelectedIds(new Set());
-    setShowPanel(false);
   }, [nodes, updateNodes]);
 
   const commitEdit = useCallback(() => {
@@ -146,40 +167,34 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     updateNodes(nodes.map(n => n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n));
   }, [nodes, updateNodes]);
 
-  // Export functions
   const exportSVG = useCallback(() => {
-    const svgStr = buildExportSVG(nodes, "mindmap");
-    const blob = new Blob([svgStr], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
+    const s = buildExportSVG(nodes);
     const a = document.createElement("a");
-    a.href = url; a.download = "mindmap.svg"; a.click();
-    URL.revokeObjectURL(url);
+    a.href = URL.createObjectURL(new Blob([s], { type: "image/svg+xml" }));
+    a.download = "mindmap.svg"; a.click();
   }, [nodes]);
 
   const exportPNG = useCallback(() => {
-    const svgStr = buildExportSVG(nodes, "mindmap");
+    const s = buildExportSVG(nodes);
     const pad = 60;
-    const widths = nodes.map(n => nodeWidth(n.text));
-    const xs = nodes.map((n, i) => [n.x - widths[i] / 2, n.x + widths[i] / 2]).flat();
+    const allW = nodes.map(n => nodeWidth(n));
+    const xs = nodes.map((n, i) => [n.x - allW[i] / 2, n.x + allW[i] / 2]).flat();
     const ys = nodes.map(n => [n.y - NODE_H / 2, n.y + NODE_H / 2]).flat();
     const W = (Math.max(...xs) - Math.min(...xs) + pad * 2) * 2;
     const H = (Math.max(...ys) - Math.min(...ys) + pad * 2) * 2;
-    const blob = new Blob([svgStr], { type: "image/svg+xml" });
-    const svgUrl = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(new Blob([s], { type: "image/svg+xml" }));
     const img = new Image();
     img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = W; canvas.height = H;
-      const ctx = canvas.getContext("2d")!;
-      ctx.fillStyle = "#f9fafb";
-      ctx.fillRect(0, 0, W, H);
+      const c = document.createElement("canvas");
+      c.width = W; c.height = H;
+      const ctx = c.getContext("2d")!;
+      ctx.fillStyle = "#f9fafb"; ctx.fillRect(0, 0, W, H);
       ctx.drawImage(img, 0, 0, W, H);
       const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
-      a.download = "mindmap.png"; a.click();
-      URL.revokeObjectURL(svgUrl);
+      a.href = c.toDataURL("image/png"); a.download = "mindmap.png"; a.click();
+      URL.revokeObjectURL(url);
     };
-    img.src = svgUrl;
+    img.src = url;
   }, [nodes]);
 
   useEffect(() => {
@@ -199,7 +214,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         const n = nodes.find(n => n.id === id);
         if (n) { setEditingId(id); setEditText(n.text); }
       } else if (e.key === "Delete") { deleteNodes(selectedIds); }
-      else if (e.key === "Escape") { setSelectedIds(new Set()); setShowPanel(false); }
+      else if (e.key === "Escape") { setSelectedIds(new Set()); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -214,6 +229,13 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     if (!svg) return { x: 0, y: 0 };
     const r = svg.getBoundingClientRect();
     return { x: (cx - r.left - pan.x - r.width / 2) / zoom, y: (cy - r.top - pan.y - r.height / 2) / zoom };
+  };
+
+  const toScreen = (nx: number, ny: number) => {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const r = svg.getBoundingClientRect();
+    return { x: r.left + r.width / 2 + pan.x + nx * zoom, y: r.top + r.height / 2 + pan.y + ny * zoom };
   };
 
   const onNodeMouseDown = (e: React.MouseEvent, nodeId: string) => {
@@ -231,7 +253,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
 
   const onBgMouseDown = (e: React.MouseEvent) => {
     if (editingId) commitEdit();
-    if (!readOnly) { setSelectedIds(new Set()); setShowPanel(false); }
+    if (!readOnly) setSelectedIds(new Set());
     setPanStart({ mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y });
   };
 
@@ -264,6 +286,10 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     return `M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}`;
   };
 
+  // Compute toolbar screen position for selected node
+  const toolbarNode = selectedId ? nodes.find(n => n.id === selectedId) : null;
+  const toolbarScreen = toolbarNode ? toScreen(toolbarNode.x, toolbarNode.y - nodeHeight(toolbarNode) / 2) : null;
+
   return (
     <div className="w-full h-full bg-gray-50 relative overflow-hidden select-none">
       <svg
@@ -277,25 +303,27 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
       >
         <rect width="100%" height="100%" fill="transparent" onMouseDown={onBgMouseDown} />
         <g transform={`translate(${svgW / 2 + pan.x},${svgH / 2 + pan.y}) scale(${zoom})`}>
+          {/* Edges */}
           {visible.filter(n => n.parentId && visibleIds.has(n.parentId)).map(n => {
             const p = nodes.find(x => x.id === n.parentId)!;
-            const pw = nodeWidth(p.text);
-            const nw = nodeWidth(n.text);
             return (
               <path key={`e-${n.id}`}
-                d={edgePath(p.x + pw / 2, p.y, n.x - nw / 2, n.y)}
+                d={edgePath(p.x + nodeWidth(p) / 2, p.y, n.x - nodeWidth(n) / 2, n.y)}
                 fill="none" stroke={n.color} strokeWidth={2} strokeOpacity={0.45}
               />
             );
           })}
 
+          {/* Nodes */}
           {visible.map(node => {
-            const w = nodeWidth(node.text);
+            const w = nodeWidth(node);
+            const h = nodeHeight(node);
             const isSelected = selectedIds.has(node.id);
             const hasChildren = nodes.some(n => n.parentId === node.id);
-            const hiddenCount = node.collapsed ? nodes.filter(n => n.parentId === node.id).length : 0;
-            const hasImage = !!node.imageUrl;
-            const totalH = hasImage ? NODE_H + 44 : NODE_H;
+            const fs = node.fontSize ?? 13;
+            const fw = node.fontBold ? "bold" : "500";
+            const tc = node.textColor ?? "white";
+            const label = node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text;
 
             return (
               <g key={node.id}
@@ -310,15 +338,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                 }}
                 style={{ cursor: readOnly ? "default" : "pointer" }}
               >
-                <rect
-                  x={-w / 2} y={-NODE_H / 2}
-                  width={w} height={NODE_H}
-                  rx={NODE_H / 2}
-                  fill={node.color}
-                  fillOpacity={isSelected ? 1 : 0.88}
-                  stroke={isSelected ? "#1e293b" : "transparent"}
-                  strokeWidth={2.5}
-                />
+                <NodeShape node={node} w={w} h={h} isSelected={isSelected} />
+
                 {node.icon && (
                   <text x={-w / 2 + 16} textAnchor="middle" dominantBaseline="middle" fontSize={14} style={{ pointerEvents: "none" }}>
                     {node.icon}
@@ -328,34 +349,26 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                   <text
                     x={node.icon ? 8 : 0}
                     textAnchor="middle" dominantBaseline="middle"
-                    fill="white" fontSize={13} fontWeight={500}
+                    fill={tc} fontSize={fs} fontWeight={fw}
+                    fontStyle={node.fontItalic ? "italic" : "normal"}
                     style={{ pointerEvents: "none" }}
                   >
-                    {node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text}
+                    {label}
                   </text>
                 )}
-                {node.note && <circle cx={w / 2 - 6} cy={-NODE_H / 2 + 6} r={4} fill="#fbbf24" style={{ pointerEvents: "none" }} />}
-                {node.url && <circle cx={w / 2 - (node.note ? 16 : 6)} cy={-NODE_H / 2 + 6} r={4} fill="#60a5fa" style={{ pointerEvents: "none" }} />}
 
-                {hasImage && (
-                  <image
-                    href={node.imageUrl}
-                    x={-w / 2} y={NODE_H / 2 + 4}
-                    width={w} height={40}
-                    preserveAspectRatio="xMidYMid slice"
-                    style={{ borderRadius: 8, pointerEvents: "none" }}
-                  />
+                {node.note && <circle cx={w / 2 - 6} cy={-h / 2 + 6} r={4} fill="#fbbf24" style={{ pointerEvents: "none" }} />}
+                {node.url && <circle cx={w / 2 - (node.note ? 16 : 6)} cy={-h / 2 + 6} r={4} fill="#60a5fa" style={{ pointerEvents: "none" }} />}
+
+                {node.imageUrl && (
+                  <image href={node.imageUrl} x={-w / 2} y={h / 2 + 4} width={w} height={40} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: "none" }} />
                 )}
 
                 {!readOnly && hasChildren && (
-                  <g
-                    transform={`translate(${w / 2 + 12}, ${hasImage ? totalH / 2 - NODE_H / 2 : 0})`}
-                    onClick={e => { e.stopPropagation(); toggleCollapse(node.id); }}
-                    style={{ cursor: "pointer" }}
-                  >
+                  <g transform={`translate(${w / 2 + 12}, 0)`} onClick={e => { e.stopPropagation(); toggleCollapse(node.id); }} style={{ cursor: "pointer" }}>
                     <circle r={9} fill="white" stroke={node.color} strokeWidth={1.5} />
                     <text textAnchor="middle" dominantBaseline="middle" fontSize={11} fill={node.color} fontWeight="bold" style={{ pointerEvents: "none" }}>
-                      {node.collapsed ? `+${hiddenCount}` : "−"}
+                      {node.collapsed ? `+${nodes.filter(n => n.parentId === node.id).length}` : "−"}
                     </text>
                   </g>
                 )}
@@ -365,13 +378,15 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         </g>
       </svg>
 
+      {/* Inline editor */}
       {!readOnly && editingId && (() => {
         const node = nodes.find(n => n.id === editingId);
         if (!node || !svgRef.current) return null;
         const r = svgRef.current.getBoundingClientRect();
         const sx = r.width / 2 + pan.x + node.x * zoom;
         const sy = r.height / 2 + pan.y + node.y * zoom;
-        const w = nodeWidth(editText) * zoom;
+        const w = nodeWidth(node) * zoom;
+        const h = NODE_H * zoom;
         return (
           <input
             ref={inputRef}
@@ -383,19 +398,25 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
               if (e.key === "Escape") setEditingId(null);
               if (e.key === "Tab") { e.preventDefault(); commitEdit(); setTimeout(() => addChild(editingId!), 30); }
             }}
-            style={{ position: "absolute", left: sx - w / 2, top: sy - (NODE_H * zoom) / 2, width: w, height: NODE_H * zoom, fontSize: 13 * zoom }}
+            style={{ position: "absolute", left: sx - w / 2, top: sy - h / 2, width: w, height: h, fontSize: (node.fontSize ?? 13) * zoom }}
             className="text-center font-medium text-white bg-transparent border-none outline-none px-2"
           />
         );
       })()}
 
+      {/* Floating node toolbar */}
+      {!readOnly && selectedId && toolbarScreen && !editingId && (
+        <NodeToolbar
+          node={nodes.find(n => n.id === selectedId)!}
+          screenX={toolbarScreen.x}
+          screenY={toolbarScreen.y}
+          onUpdate={updated => updateNodes(nodes.map(n => n.id === selectedId ? updated : n))}
+        />
+      )}
+
+      {/* Action bar (multi-select or quick actions) */}
       {!readOnly && selectedIds.size > 0 && !editingId && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
-          {selectedId && (
-            <button onClick={() => setShowPanel(p => !p)} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-600 text-xs rounded-lg hover:bg-gray-50 shadow-sm">
-              ✏️ プロパティ
-            </button>
-          )}
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex gap-2 z-10">
           {selectedId && (
             <button onClick={() => addChild(selectedId)} className="px-3 py-1.5 bg-indigo-500 text-white text-xs rounded-lg hover:bg-indigo-600 shadow-sm">
               ＋ 子 (Tab)
@@ -412,26 +433,12 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         </div>
       )}
 
-      {!readOnly && selectedId && showPanel && (
-        <NodePropertiesPanel
-          node={nodes.find(n => n.id === selectedId)!}
-          onUpdate={updated => updateNodes(nodes.map(n => n.id === selectedId ? updated : n))}
-          onClose={() => setShowPanel(false)}
-        />
-      )}
-
+      {/* Shortcut hint */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white rounded-xl shadow-sm px-4 py-2 flex items-center gap-4 text-xs text-gray-400 border border-gray-100">
-        {readOnly ? (
-          <span>スクロール: ズーム　ドラッグ: 移動</span>
-        ) : (
-          <>
-            <span>Tab: 子ノード</span>
-            <span>Enter: 兄弟ノード</span>
-            <span>F2: 編集</span>
-            <span>Delete: 削除</span>
-            <span>Shift+クリック: 複数選択</span>
-          </>
-        )}
+        {readOnly
+          ? <span>スクロール: ズーム　ドラッグ: 移動</span>
+          : <><span>Tab: 子</span><span>Enter: 兄弟</span><span>F2: 編集</span><span>Delete: 削除</span><span>Shift+クリック: 複数選択</span></>
+        }
       </div>
     </div>
   );

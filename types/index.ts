@@ -10,6 +10,11 @@ export interface MindMapNode {
   url?: string;
   imageUrl?: string;
   collapsed?: boolean;
+  shape?: "pill" | "rect" | "circle" | "diamond";
+  fontBold?: boolean;
+  fontItalic?: boolean;
+  fontSize?: number;
+  textColor?: string;
 }
 
 export interface MindMap {
