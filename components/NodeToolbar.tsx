@@ -49,7 +49,7 @@ export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props)
   ];
 
   const TOOLBAR_W = 220;
-  const left = Math.max(8, Math.min(screenX - TOOLBAR_W / 2, window.innerWidth - TOOLBAR_W - 8));
+  const left = Math.max(8, screenX - TOOLBAR_W / 2);
   const top = screenY - 52;
 
   return (

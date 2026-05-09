@@ -112,15 +112,15 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     return () => obs.disconnect();
   }, []);
 
-  // Compute toolbar position from selected node
+  // Compute toolbar position from selected node (canvas-relative coordinates)
   useEffect(() => {
     const svg = svgRef.current;
     const node = selectedId ? nodes.find(n => n.id === selectedId) : undefined;
     if (svg && node) {
       const r = svg.getBoundingClientRect();
       setToolbarPos({
-        x: r.left + r.width / 2 + pan.x + node.x * zoom,
-        y: r.top + r.height / 2 + pan.y + node.y * zoom - (nodeHeight(node) / 2) * zoom,
+        x: r.width / 2 + pan.x + node.x * zoom,
+        y: r.height / 2 + pan.y + node.y * zoom - (nodeHeight(node) / 2) * zoom,
       });
     } else {
       setToolbarPos(null);
@@ -414,26 +414,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         />
       )}
 
-      {!readOnly && selectedIds.size > 0 && !editingId && (
-        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex gap-2 z-10">
-          {selectedId && (
-            <button onClick={() => addChild(selectedId)} className="px-3 py-1.5 bg-indigo-500 text-white text-xs rounded-lg hover:bg-indigo-600 shadow-sm">＋ 子 (Tab)</button>
-          )}
-          {selectedId && (
-            <button onClick={() => addSibling(selectedId)} className="px-3 py-1.5 bg-indigo-100 text-indigo-600 text-xs rounded-lg hover:bg-indigo-200 shadow-sm">＋ 兄弟 (Enter)</button>
-          )}
-          <button onClick={() => deleteNodes(selectedIds)} className="px-3 py-1.5 bg-red-100 text-red-500 text-xs rounded-lg hover:bg-red-200 shadow-sm">
-            削除{selectedIds.size > 1 ? ` (${selectedIds.size})` : ""}
-          </button>
-        </div>
-      )}
-
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white rounded-xl shadow-sm px-4 py-2 flex items-center gap-4 text-xs text-gray-400 border border-gray-100">
-        {readOnly
-          ? <span>スクロール: ズーム　ドラッグ: 移動</span>
-          : <><span>Tab: 子</span><span>Enter: 兄弟</span><span>F2: 編集</span><span>Delete: 削除</span><span>Shift+クリック: 複数選択</span></>
-        }
-      </div>
     </div>
   );
 }
