@@ -5,6 +5,10 @@ export interface MindMapNode {
   y: number;
   parentId: string | null;
   color: string;
+  icon?: string;
+  note?: string;
+  url?: string;
+  collapsed?: boolean;
 }
 
 export interface MindMap {
