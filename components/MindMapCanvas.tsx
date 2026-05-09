@@ -14,6 +14,7 @@ interface Props {
 const NODE_H = 34;
 
 function nodeWidth(node: MindMapNode): number {
+  if (node.imageWidth) return node.imageWidth;
   const base = Math.max(80, Math.min(220, node.text.length * 8.5 + 48));
   if (node.shape === "circle") return NODE_H * 2 + 8;
   if (node.shape === "diamond") return base + 24;
@@ -21,6 +22,7 @@ function nodeWidth(node: MindMapNode): number {
 }
 
 function nodeHeight(node: MindMapNode): number {
+  if (node.imageHeight) return node.imageHeight;
   if (node.shape === "circle") return NODE_H * 2 + 8;
   if (node.shape === "diamond") return NODE_H + 16;
   return NODE_H;
@@ -98,6 +100,11 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   const [insertImageMode, setInsertImageMode] = useState(false);
   const [insertImageUrl, setInsertImageUrl] = useState("");
   const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number } | null>(null);
+  const [resizing, setResizing] = useState<{
+    id: string; corner: "se" | "sw" | "ne" | "nw";
+    startCx: number; startCy: number;
+    startW: number; startH: number; startNx: number; startNy: number;
+  } | null>(null);
   const [editorStyle, setEditorStyle] = useState<{ left: number; top: number; width: number; height: number; fontSize: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -214,7 +221,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     if (!url.trim()) return;
     const newNode: MindMapNode = {
       id: `node-${Date.now()}`, text: "",
-      x: cx, y: cy, parentId: null, color: "#64748b", imageUrl: url.trim(),
+      x: cx, y: cy, parentId: null, color: "#64748b",
+      imageUrl: url.trim(), imageWidth: 200, imageHeight: 150,
     };
     updateNodes([...nodes, newNode]);
     setSelectedIds(new Set([newNode.id]));
@@ -313,6 +321,34 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
+    if (resizing) {
+      const cp = toCanvas(e.clientX, e.clientY);
+      const dx = cp.x - resizing.startCx;
+      const dy = cp.y - resizing.startCy;
+      const minW = 60, minH = 40;
+      let newW: number, newH: number, newX: number, newY: number;
+      switch (resizing.corner) {
+        case "se":
+          newW = Math.max(minW, resizing.startW + dx); newH = Math.max(minH, resizing.startH + dy);
+          newX = (resizing.startNx - resizing.startW / 2) + newW / 2;
+          newY = (resizing.startNy - resizing.startH / 2) + newH / 2; break;
+        case "sw":
+          newW = Math.max(minW, resizing.startW - dx); newH = Math.max(minH, resizing.startH + dy);
+          newX = (resizing.startNx + resizing.startW / 2) - newW / 2;
+          newY = (resizing.startNy - resizing.startH / 2) + newH / 2; break;
+        case "ne":
+          newW = Math.max(minW, resizing.startW + dx); newH = Math.max(minH, resizing.startH - dy);
+          newX = (resizing.startNx - resizing.startW / 2) + newW / 2;
+          newY = (resizing.startNy + resizing.startH / 2) - newH / 2; break;
+        default: // nw
+          newW = Math.max(minW, resizing.startW - dx); newH = Math.max(minH, resizing.startH - dy);
+          newX = (resizing.startNx + resizing.startW / 2) - newW / 2;
+          newY = (resizing.startNy + resizing.startH / 2) - newH / 2;
+      }
+      setNodes(prev => prev.map(n => n.id === resizing.id
+        ? { ...n, imageWidth: newW, imageHeight: newH, x: newX, y: newY } : n));
+      return;
+    }
     if (dragging) {
       const p = toCanvas(e.clientX, e.clientY);
       setNodes(prev => prev.map(n => n.id === dragging.id ? { ...n, x: p.x - dragging.ox, y: p.y - dragging.oy } : n));
@@ -321,6 +357,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   };
 
   const onMouseUp = (e: React.MouseEvent) => {
+    if (resizing) { onNodesChange(nodes); setResizing(null); return; }
     if (dragging) {
       onNodesChange(nodes);
     } else if (!readOnly && panStart) {
@@ -340,6 +377,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   };
 
   const onMouseLeave = () => {
+    if (resizing) { onNodesChange(nodes); setResizing(null); return; }
     if (dragging) onNodesChange(nodes);
     setDragging(null);
     setPanStart(null);
@@ -386,6 +424,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
             const w = nodeWidth(node), h = nodeHeight(node);
             const isSelected = selectedIds.has(node.id);
             const label = node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text;
+            const isImageNode = !!node.imageWidth;
 
             return (
               <g key={node.id}
@@ -394,7 +433,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                 onMouseEnter={() => { if (!readOnly) setHoveredId(node.id); }}
                 onMouseLeave={() => setHoveredId(null)}
                 onDoubleClick={e => {
-                  if (readOnly) return;
+                  if (readOnly || isImageNode) return;
                   e.stopPropagation();
                   setSelectedIds(new Set([node.id]));
                   setEditingId(node.id);
@@ -402,60 +441,85 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                 }}
                 style={{ cursor: readOnly ? "default" : "pointer" }}
               >
-                <NodeShape node={node} w={w} h={h} isSelected={isSelected} />
-                {node.icon && (
-                  <text x={-w / 2 + 16} textAnchor="middle" dominantBaseline="middle" fontSize={14} style={{ pointerEvents: "none" }}>{node.icon}</text>
-                )}
-                {editingId !== node.id && (
-                  <text
-                    x={node.icon ? 8 : 0} textAnchor="middle" dominantBaseline="middle"
-                    fill={node.shape === "text" ? (node.textColor ?? node.color) : (node.textColor ?? "white")} fontSize={node.fontSize ?? 13}
-                    fontWeight={node.fontBold ? "bold" : "500"}
-                    fontStyle={node.fontItalic ? "italic" : "normal"}
-                    style={{ pointerEvents: "none" }}
-                  >{label}</text>
-                )}
-                {node.note && (
-                  <g
-                    onClick={e => {
-                      e.stopPropagation();
-                      const svg = svgRef.current;
-                      if (!svg) return;
-                      const r = svg.getBoundingClientRect();
-                      setNotePopup({ nodeId: node.id, x: e.clientX - r.left, y: e.clientY - r.top });
-                    }}
-                    onMouseDown={e => e.stopPropagation()}
-                    style={{ cursor: "pointer" }}
-                  >
-                    <rect x={w / 2 - 30} y={-h / 2 - 4} width={30} height={16} rx={8} fill="rgba(30,41,59,0.72)" />
-                    <text x={w / 2 - 15} y={-h / 2 + 4} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="white" style={{ pointerEvents: "none" }}>💬 1</text>
-                  </g>
-                )}
-                {node.url && <circle cx={w / 2 - (node.note ? 16 : 6)} cy={-h / 2 + 6} r={4} fill="#60a5fa" style={{ pointerEvents: "none" }} />}
-                {node.imageUrl && (
-                  <image href={node.imageUrl} x={-w / 2} y={h / 2 + 4} width={w} height={40} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: "none" }} />
-                )}
-                {!readOnly && hoveredId === node.id && (
+                {isImageNode ? (
                   <>
-                    <g
-                      transform={`translate(${w / 2 + 14}, 0)`}
-                      onMouseDown={e => e.stopPropagation()}
-                      onClick={e => { e.stopPropagation(); addChild(node.id); }}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <circle r={10} fill="#6366f1" />
-                      <text textAnchor="middle" dominantBaseline="middle" fontSize={16} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>+</text>
-                    </g>
-                    {node.parentId && (
+                    <rect x={-w / 2} y={-h / 2} width={w} height={h} fill="transparent" />
+                    <image href={node.imageUrl} x={-w / 2} y={-h / 2} width={w} height={h} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: "none" }} />
+                    {isSelected && <rect x={-w / 2} y={-h / 2} width={w} height={h} fill="none" stroke="#6366f1" strokeWidth={2} strokeDasharray="4 2" rx={4} />}
+                    {isSelected && (
+                      [["se", w / 2, h / 2], ["sw", -w / 2, h / 2], ["ne", w / 2, -h / 2], ["nw", -w / 2, -h / 2]] as ["se" | "sw" | "ne" | "nw", number, number][]
+                    ).map(([corner, hx, hy]) => (
+                      <rect
+                        key={corner}
+                        x={hx - 5} y={hy - 5} width={10} height={10}
+                        fill="white" stroke="#6366f1" strokeWidth={1.5} rx={2}
+                        style={{ cursor: (corner === "se" || corner === "nw") ? "nwse-resize" : "nesw-resize" }}
+                        onMouseDown={e => {
+                          e.stopPropagation();
+                          const cp = toCanvas(e.clientX, e.clientY);
+                          setResizing({ id: node.id, corner, startCx: cp.x, startCy: cp.y, startW: w, startH: h, startNx: node.x, startNy: node.y });
+                        }}
+                      />
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <NodeShape node={node} w={w} h={h} isSelected={isSelected} />
+                    {node.icon && (
+                      <text x={-w / 2 + 16} textAnchor="middle" dominantBaseline="middle" fontSize={14} style={{ pointerEvents: "none" }}>{node.icon}</text>
+                    )}
+                    {editingId !== node.id && (
+                      <text
+                        x={node.icon ? 8 : 0} textAnchor="middle" dominantBaseline="middle"
+                        fill={node.shape === "text" ? (node.textColor ?? node.color) : (node.textColor ?? "white")} fontSize={node.fontSize ?? 13}
+                        fontWeight={node.fontBold ? "bold" : "500"}
+                        fontStyle={node.fontItalic ? "italic" : "normal"}
+                        style={{ pointerEvents: "none" }}
+                      >{label}</text>
+                    )}
+                    {node.note && (
                       <g
-                        transform={`translate(0, ${h / 2 + 16})`}
+                        onClick={e => {
+                          e.stopPropagation();
+                          const svg = svgRef.current;
+                          if (!svg) return;
+                          const r = svg.getBoundingClientRect();
+                          setNotePopup({ nodeId: node.id, x: e.clientX - r.left, y: e.clientY - r.top });
+                        }}
                         onMouseDown={e => e.stopPropagation()}
-                        onClick={e => { e.stopPropagation(); addSibling(node.id); }}
                         style={{ cursor: "pointer" }}
                       >
-                        <circle r={10} fill="#6366f1" />
-                        <text textAnchor="middle" dominantBaseline="middle" fontSize={16} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>+</text>
+                        <rect x={w / 2 - 30} y={-h / 2 - 4} width={30} height={16} rx={8} fill="rgba(30,41,59,0.72)" />
+                        <text x={w / 2 - 15} y={-h / 2 + 4} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="white" style={{ pointerEvents: "none" }}>💬 1</text>
                       </g>
+                    )}
+                    {node.url && <circle cx={w / 2 - (node.note ? 16 : 6)} cy={-h / 2 + 6} r={4} fill="#60a5fa" style={{ pointerEvents: "none" }} />}
+                    {node.imageUrl && (
+                      <image href={node.imageUrl} x={-w / 2} y={h / 2 + 4} width={w} height={40} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: "none" }} />
+                    )}
+                    {!readOnly && (hoveredId === node.id || isSelected) && (
+                      <>
+                        <g
+                          transform={`translate(${w / 2 + 14}, 0)`}
+                          onMouseDown={e => e.stopPropagation()}
+                          onClick={e => { e.stopPropagation(); addChild(node.id); }}
+                          style={{ cursor: "pointer" }}
+                        >
+                          <circle r={10} fill="#6366f1" />
+                          <text textAnchor="middle" dominantBaseline="middle" fontSize={16} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>+</text>
+                        </g>
+                        {node.parentId && (
+                          <g
+                            transform={`translate(0, ${h / 2 + 16})`}
+                            onMouseDown={e => e.stopPropagation()}
+                            onClick={e => { e.stopPropagation(); addSibling(node.id); }}
+                            style={{ cursor: "pointer" }}
+                          >
+                            <circle r={10} fill="#6366f1" />
+                            <text textAnchor="middle" dominantBaseline="middle" fontSize={16} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>+</text>
+                          </g>
+                        )}
+                      </>
                     )}
                   </>
                 )}
@@ -481,7 +545,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         />
       )}
 
-      {!readOnly && selectedId && toolbarPos && !editingId && (
+      {!readOnly && selectedId && toolbarPos && !editingId && !nodes.find(n => n.id === selectedId)?.imageWidth && (
         <NodeToolbar
           node={nodes.find(n => n.id === selectedId)!}
           screenX={toolbarPos.x}

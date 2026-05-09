@@ -15,6 +15,8 @@ export interface MindMapNode {
   fontItalic?: boolean;
   fontSize?: number;
   textColor?: string;
+  imageWidth?: number;
+  imageHeight?: number;
 }
 
 export interface HistoryEntry {
