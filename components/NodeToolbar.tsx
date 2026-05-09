@@ -26,6 +26,7 @@ const SHAPES = [
   { id: "rect", label: "▭" },
   { id: "circle", label: "⊙" },
   { id: "diamond", label: "◇" },
+  { id: "text", label: "T" },
 ] as const;
 
 export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props) {

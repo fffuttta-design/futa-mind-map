@@ -10,11 +10,17 @@ export interface MindMapNode {
   url?: string;
   imageUrl?: string;
   collapsed?: boolean;
-  shape?: "pill" | "rect" | "circle" | "diamond";
+  shape?: "pill" | "rect" | "circle" | "diamond" | "text";
   fontBold?: boolean;
   fontItalic?: boolean;
   fontSize?: number;
   textColor?: string;
+}
+
+export interface HistoryEntry {
+  id: string;
+  nodes: MindMapNode[];
+  savedAt: number;
 }
 
 export interface MindMap {

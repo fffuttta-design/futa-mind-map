@@ -41,6 +41,8 @@ function NodeShape({ node, w, h, isSelected }: { node: MindMapNode; w: number; h
     case "diamond": {
       return <polygon points={`0,${-h / 2} ${w / 2},0 0,${h / 2} ${-w / 2},0`} fill={fill} fillOpacity={fillOp} stroke={stroke} strokeWidth={sw} />;
     }
+    case "text":
+      return <rect x={-w / 2} y={-h / 2} width={w} height={h} fill="transparent" stroke={isSelected ? "#6366f1" : "transparent"} strokeWidth={1.5} strokeDasharray={isSelected ? "4 2" : undefined} />;
     default:
       return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={h / 2} fill={fill} fillOpacity={fillOp} stroke={stroke} strokeWidth={sw} />;
   }
@@ -403,7 +405,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                 {editingId !== node.id && (
                   <text
                     x={node.icon ? 8 : 0} textAnchor="middle" dominantBaseline="middle"
-                    fill={node.textColor ?? "white"} fontSize={node.fontSize ?? 13}
+                    fill={node.shape === "text" ? (node.textColor ?? node.color) : (node.textColor ?? "white")} fontSize={node.fontSize ?? 13}
                     fontWeight={node.fontBold ? "bold" : "500"}
                     fontStyle={node.fontItalic ? "italic" : "normal"}
                     style={{ pointerEvents: "none" }}
