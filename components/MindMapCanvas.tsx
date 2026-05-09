@@ -91,6 +91,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   const [zoom, setZoom] = useState(1);
   const [svgSize, setSvgSize] = useState({ w: 800, h: 600 });
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [insertMenu, setInsertMenu] = useState<{ sx: number; sy: number; cx: number; cy: number } | null>(null);
+  const [insertImageMode, setInsertImageMode] = useState(false);
+  const [insertImageUrl, setInsertImageUrl] = useState("");
   const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number } | null>(null);
   const [editorStyle, setEditorStyle] = useState<{ left: number; top: number; width: number; height: number; fontSize: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -148,13 +151,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     onNodesChange(updated);
   }, [onNodesChange]);
 
-  const getVisibleNodes = useCallback((nodeList: MindMapNode[]) => {
-    const collapsedIds = new Set(nodeList.filter(n => n.collapsed).map(n => n.id));
-    const hidden = new Set<string>();
-    const hide = (pid: string) => nodeList.filter(n => n.parentId === pid).forEach(n => { hidden.add(n.id); hide(n.id); });
-    collapsedIds.forEach(id => hide(id));
-    return nodeList.filter(n => !hidden.has(n.id));
-  }, []);
+  const getVisibleNodes = useCallback((nodeList: MindMapNode[]) => nodeList, []);
 
   const addChild = useCallback((parentId: string) => {
     const parent = nodes.find(n => n.id === parentId);
@@ -199,8 +196,28 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     setEditingId(null);
   }, [editingId, editText, nodes, updateNodes]);
 
-  const toggleCollapse = useCallback((nodeId: string) => {
-    updateNodes(nodes.map(n => n.id === nodeId ? { ...n, collapsed: !n.collapsed } : n));
+  const addFloatingNode = useCallback((cx: number, cy: number) => {
+    const newNode: MindMapNode = {
+      id: `node-${Date.now()}`, text: "新しいノード",
+      x: cx, y: cy, parentId: null, color: "#6366f1",
+    };
+    updateNodes([...nodes, newNode]);
+    setSelectedIds(new Set([newNode.id]));
+    setInsertMenu(null);
+    setTimeout(() => { setEditingId(newNode.id); setEditText(newNode.text); }, 50);
+  }, [nodes, updateNodes]);
+
+  const addFloatingImageNode = useCallback((cx: number, cy: number, url: string) => {
+    if (!url.trim()) return;
+    const newNode: MindMapNode = {
+      id: `node-${Date.now()}`, text: "",
+      x: cx, y: cy, parentId: null, color: "#64748b", imageUrl: url.trim(),
+    };
+    updateNodes([...nodes, newNode]);
+    setSelectedIds(new Set([newNode.id]));
+    setInsertMenu(null);
+    setInsertImageMode(false);
+    setInsertImageUrl("");
   }, [nodes, updateNodes]);
 
   const exportSVG = useCallback(() => {
@@ -248,7 +265,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         const n = nodes.find(n => n.id === id);
         if (n) { setEditingId(id); setEditText(n.text); }
       } else if (e.key === "Delete") { deleteNodes(selectedIds); }
-      else if (e.key === "Escape") { setSelectedIds(new Set()); }
+      else if (e.key === "Escape") { setSelectedIds(new Set()); setInsertMenu(null); setInsertImageMode(false); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -268,6 +285,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   const onNodeMouseDown = (e: React.MouseEvent, nodeId: string) => {
     if (readOnly) return;
     e.stopPropagation();
+    setInsertMenu(null);
     if (e.shiftKey) {
       setSelectedIds(prev => {
         const s = new Set(prev);
@@ -283,6 +301,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   };
 
   const onBgMouseDown = (e: React.MouseEvent) => {
+    if (insertMenu) { setInsertMenu(null); setInsertImageMode(false); return; }
     if (editingId) commitEdit();
     if (!readOnly) setSelectedIds(new Set());
     setPanStart({ mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y });
@@ -296,7 +315,26 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     if (panStart) setPan({ x: panStart.px + e.clientX - panStart.mx, y: panStart.py + e.clientY - panStart.my });
   };
 
-  const onMouseUp = () => {
+  const onMouseUp = (e: React.MouseEvent) => {
+    if (dragging) {
+      onNodesChange(nodes);
+    } else if (!readOnly && panStart) {
+      const dx = Math.abs(e.clientX - panStart.mx);
+      const dy = Math.abs(e.clientY - panStart.my);
+      if (dx < 5 && dy < 5) {
+        const svg = svgRef.current;
+        if (svg) {
+          const r = svg.getBoundingClientRect();
+          const cv = toCanvas(e.clientX, e.clientY);
+          setInsertMenu({ sx: e.clientX - r.left, sy: e.clientY - r.top, cx: cv.x, cy: cv.y });
+        }
+      }
+    }
+    setDragging(null);
+    setPanStart(null);
+  };
+
+  const onMouseLeave = () => {
     if (dragging) onNodesChange(nodes);
     setDragging(null);
     setPanStart(null);
@@ -323,7 +361,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         style={{ cursor: panStart ? "grabbing" : "grab" }}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
+        onMouseLeave={onMouseLeave}
         onWheel={onWheel}
       >
         <rect width="100%" height="100%" fill="transparent" onMouseDown={onBgMouseDown} />
@@ -341,7 +379,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           {visible.map(node => {
             const w = nodeWidth(node), h = nodeHeight(node);
             const isSelected = selectedIds.has(node.id);
-            const hasChildren = nodes.some(n => n.parentId === node.id);
             const label = node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text;
 
             return (
@@ -377,18 +414,10 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                 {node.imageUrl && (
                   <image href={node.imageUrl} x={-w / 2} y={h / 2 + 4} width={w} height={40} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: "none" }} />
                 )}
-                {!readOnly && hasChildren && (
-                  <g transform={`translate(${w / 2 + 12}, 0)`} onClick={e => { e.stopPropagation(); toggleCollapse(node.id); }} style={{ cursor: "pointer" }}>
-                    <circle r={9} fill="white" stroke={node.color} strokeWidth={1.5} />
-                    <text textAnchor="middle" dominantBaseline="middle" fontSize={11} fill={node.color} fontWeight="bold" style={{ pointerEvents: "none" }}>
-                      {node.collapsed ? `+${nodes.filter(n => n.parentId === node.id).length}` : "−"}
-                    </text>
-                  </g>
-                )}
                 {!readOnly && hoveredId === node.id && (
                   <>
                     <g
-                      transform={`translate(${w / 2 + (hasChildren ? 36 : 14)}, 0)`}
+                      transform={`translate(${w / 2 + 14}, 0)`}
                       onMouseDown={e => e.stopPropagation()}
                       onClick={e => { e.stopPropagation(); addChild(node.id); }}
                       style={{ cursor: "pointer" }}
@@ -422,9 +451,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           onChange={e => setEditText(e.target.value)}
           onBlur={commitEdit}
           onKeyDown={e => {
-            if (e.key === "Enter") { e.preventDefault(); commitEdit(); }
-            if (e.key === "Escape") setEditingId(null);
-            if (e.key === "Tab") { e.preventDefault(); commitEdit(); setTimeout(() => addChild(editingId!), 30); }
+            if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); commitEdit(); }
+            if (e.key === "Escape") { e.stopPropagation(); setEditingId(null); }
+            if (e.key === "Tab") { e.preventDefault(); e.stopPropagation(); commitEdit(); setTimeout(() => addChild(editingId!), 30); }
           }}
           style={{ position: "absolute", ...editorStyle }}
           className="text-center font-medium text-white bg-transparent border-none outline-none px-2"
@@ -438,6 +467,43 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           screenY={toolbarPos.y}
           onUpdate={updated => updateNodes(nodes.map(n => n.id === selectedId ? updated : n))}
         />
+      )}
+
+      {!readOnly && insertMenu && (
+        <div
+          className="absolute z-50 bg-white rounded-xl shadow-lg border border-gray-100 p-1.5 flex flex-col gap-0.5 min-w-[130px]"
+          style={{ left: insertMenu.sx, top: insertMenu.sy }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          {!insertImageMode ? (
+            <>
+              <button
+                onClick={() => addFloatingNode(insertMenu.cx, insertMenu.cy)}
+                className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg"
+              >＋ ノード</button>
+              <button
+                onClick={() => setInsertImageMode(true)}
+                className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg"
+              >🖼️ 画像</button>
+            </>
+          ) : (
+            <div className="flex flex-col gap-2 p-1">
+              <p className="text-xs text-gray-400">画像URL</p>
+              <input
+                autoFocus
+                type="url"
+                value={insertImageUrl}
+                onChange={e => setInsertImageUrl(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") { e.stopPropagation(); addFloatingImageNode(insertMenu.cx, insertMenu.cy, insertImageUrl); }
+                  if (e.key === "Escape") { e.stopPropagation(); setInsertMenu(null); setInsertImageMode(false); }
+                }}
+                placeholder="https://..."
+                className="text-xs border border-gray-200 rounded px-2 py-1.5 outline-none focus:border-indigo-400 w-44"
+              />
+            </div>
+          )}
+        </div>
       )}
 
     </div>
