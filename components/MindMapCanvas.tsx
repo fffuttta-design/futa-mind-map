@@ -111,6 +111,20 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
 
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null;
 
+  // Refs to always-current values for window-level event handlers
+  const nodesRef = useRef(nodes);
+  const draggingRef = useRef(dragging);
+  const resizingRef = useRef(resizing);
+  const panRef = useRef(pan);
+  const zoomRef = useRef(zoom);
+  const onNodesChangeRef = useRef(onNodesChange);
+  nodesRef.current = nodes;
+  draggingRef.current = dragging;
+  resizingRef.current = resizing;
+  panRef.current = pan;
+  zoomRef.current = zoom;
+  onNodesChangeRef.current = onNodesChange;
+
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setNodes(initialNodes); }, [initialNodes]);
 
@@ -286,6 +300,58 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     if (editingId && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
   }, [editingId]);
 
+  // Window-level drag/resize handlers so mouse can leave SVG without dropping
+  useEffect(() => {
+    const getCanvasPos = (cx: number, cy: number) => {
+      const svg = svgRef.current;
+      if (!svg) return { x: 0, y: 0 };
+      const r = svg.getBoundingClientRect();
+      const p = panRef.current, z = zoomRef.current;
+      return { x: (cx - r.left - p.x - r.width / 2) / z, y: (cy - r.top - p.y - r.height / 2) / z };
+    };
+    const onMove = (e: MouseEvent) => {
+      const drag = draggingRef.current;
+      if (drag) {
+        const p = getCanvasPos(e.clientX, e.clientY);
+        setNodes(prev => prev.map(n => n.id === drag.id ? { ...n, x: p.x - drag.ox, y: p.y - drag.oy } : n));
+        return;
+      }
+      const res = resizingRef.current;
+      if (res) {
+        const cp = getCanvasPos(e.clientX, e.clientY);
+        const dx = cp.x - res.startCx, dy = cp.y - res.startCy;
+        const minW = 60, minH = 40;
+        let newW: number, newH: number, newX: number, newY: number;
+        switch (res.corner) {
+          case "se": newW = Math.max(minW, res.startW + dx); newH = Math.max(minH, res.startH + dy);
+            newX = (res.startNx - res.startW / 2) + newW / 2; newY = (res.startNy - res.startH / 2) + newH / 2; break;
+          case "sw": newW = Math.max(minW, res.startW - dx); newH = Math.max(minH, res.startH + dy);
+            newX = (res.startNx + res.startW / 2) - newW / 2; newY = (res.startNy - res.startH / 2) + newH / 2; break;
+          case "ne": newW = Math.max(minW, res.startW + dx); newH = Math.max(minH, res.startH - dy);
+            newX = (res.startNx - res.startW / 2) + newW / 2; newY = (res.startNy + res.startH / 2) - newH / 2; break;
+          default: newW = Math.max(minW, res.startW - dx); newH = Math.max(minH, res.startH - dy);
+            newX = (res.startNx + res.startW / 2) - newW / 2; newY = (res.startNy + res.startH / 2) - newH / 2;
+        }
+        setNodes(prev => prev.map(n => n.id === res.id
+          ? { ...n, imageWidth: newW, imageHeight: newH, x: newX, y: newY } : n));
+      }
+    };
+    const onUp = () => {
+      if (draggingRef.current || resizingRef.current) {
+        onNodesChangeRef.current(nodesRef.current);
+        setDragging(null);
+        setResizing(null);
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toCanvas = (cx: number, cy: number) => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
@@ -321,46 +387,11 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
-    if (resizing) {
-      const cp = toCanvas(e.clientX, e.clientY);
-      const dx = cp.x - resizing.startCx;
-      const dy = cp.y - resizing.startCy;
-      const minW = 60, minH = 40;
-      let newW: number, newH: number, newX: number, newY: number;
-      switch (resizing.corner) {
-        case "se":
-          newW = Math.max(minW, resizing.startW + dx); newH = Math.max(minH, resizing.startH + dy);
-          newX = (resizing.startNx - resizing.startW / 2) + newW / 2;
-          newY = (resizing.startNy - resizing.startH / 2) + newH / 2; break;
-        case "sw":
-          newW = Math.max(minW, resizing.startW - dx); newH = Math.max(minH, resizing.startH + dy);
-          newX = (resizing.startNx + resizing.startW / 2) - newW / 2;
-          newY = (resizing.startNy - resizing.startH / 2) + newH / 2; break;
-        case "ne":
-          newW = Math.max(minW, resizing.startW + dx); newH = Math.max(minH, resizing.startH - dy);
-          newX = (resizing.startNx - resizing.startW / 2) + newW / 2;
-          newY = (resizing.startNy + resizing.startH / 2) - newH / 2; break;
-        default: // nw
-          newW = Math.max(minW, resizing.startW - dx); newH = Math.max(minH, resizing.startH - dy);
-          newX = (resizing.startNx + resizing.startW / 2) - newW / 2;
-          newY = (resizing.startNy + resizing.startH / 2) - newH / 2;
-      }
-      setNodes(prev => prev.map(n => n.id === resizing.id
-        ? { ...n, imageWidth: newW, imageHeight: newH, x: newX, y: newY } : n));
-      return;
-    }
-    if (dragging) {
-      const p = toCanvas(e.clientX, e.clientY);
-      setNodes(prev => prev.map(n => n.id === dragging.id ? { ...n, x: p.x - dragging.ox, y: p.y - dragging.oy } : n));
-    }
     if (panStart) setPan({ x: panStart.px + e.clientX - panStart.mx, y: panStart.py + e.clientY - panStart.my });
   };
 
   const onMouseUp = (e: React.MouseEvent) => {
-    if (resizing) { onNodesChange(nodes); setResizing(null); return; }
-    if (dragging) {
-      onNodesChange(nodes);
-    } else if (!readOnly && panStart) {
+    if (!readOnly && panStart) {
       const dx = Math.abs(e.clientX - panStart.mx);
       const dy = Math.abs(e.clientY - panStart.my);
       if (dx < 5 && dy < 5) {
@@ -371,15 +402,11 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           setInsertMenu({ sx: e.clientX - r.left, sy: e.clientY - r.top, cx: cv.x, cy: cv.y });
         }
       }
+      setPanStart(null);
     }
-    setDragging(null);
-    setPanStart(null);
   };
 
   const onMouseLeave = () => {
-    if (resizing) { onNodesChange(nodes); setResizing(null); return; }
-    if (dragging) onNodesChange(nodes);
-    setDragging(null);
     setPanStart(null);
   };
 
@@ -489,8 +516,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                         onMouseDown={e => e.stopPropagation()}
                         style={{ cursor: "pointer" }}
                       >
-                        <rect x={w / 2 - 30} y={-h / 2 - 4} width={30} height={16} rx={8} fill="rgba(30,41,59,0.72)" />
-                        <text x={w / 2 - 15} y={-h / 2 + 4} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="white" style={{ pointerEvents: "none" }}>💬 1</text>
+                        <circle cx={w / 2 - 8} cy={-h / 2 + 8} r={10} fill="transparent" />
+                        <text x={w / 2 - 8} y={-h / 2 + 8} textAnchor="middle" dominantBaseline="middle" fontSize={13} style={{ pointerEvents: "none" }}>💬</text>
                       </g>
                     )}
                     {node.url && <circle cx={w / 2 - (node.note ? 16 : 6)} cy={-h / 2 + 6} r={4} fill="#60a5fa" style={{ pointerEvents: "none" }} />}
