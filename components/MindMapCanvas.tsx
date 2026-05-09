@@ -427,8 +427,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                     onMouseDown={e => e.stopPropagation()}
                     style={{ cursor: "pointer" }}
                   >
-                    <circle cx={w / 2 - 6} cy={-h / 2 + 6} r={8} fill="transparent" />
-                    <circle cx={w / 2 - 6} cy={-h / 2 + 6} r={4} fill="#fbbf24" />
+                    <rect x={w / 2 - 30} y={-h / 2 - 4} width={30} height={16} rx={8} fill="rgba(30,41,59,0.72)" />
+                    <text x={w / 2 - 15} y={-h / 2 + 4} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="white" style={{ pointerEvents: "none" }}>💬 1</text>
                   </g>
                 )}
                 {node.url && <circle cx={w / 2 - (node.note ? 16 : 6)} cy={-h / 2 + 6} r={4} fill="#60a5fa" style={{ pointerEvents: "none" }} />}
