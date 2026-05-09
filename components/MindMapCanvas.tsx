@@ -93,6 +93,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   const [zoom, setZoom] = useState(1);
   const [svgSize, setSvgSize] = useState({ w: 800, h: 600 });
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [notePopup, setNotePopup] = useState<{ nodeId: string; x: number; y: number } | null>(null);
   const [insertMenu, setInsertMenu] = useState<{ sx: number; sy: number; cx: number; cy: number } | null>(null);
   const [insertImageMode, setInsertImageMode] = useState(false);
   const [insertImageUrl, setInsertImageUrl] = useState("");
@@ -267,7 +268,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         const n = nodes.find(n => n.id === id);
         if (n) { setEditingId(id); setEditText(n.text); }
       } else if (e.key === "Delete") { deleteNodes(selectedIds); }
-      else if (e.key === "Escape") { setSelectedIds(new Set()); setInsertMenu(null); setInsertImageMode(false); }
+      else if (e.key === "Escape") { setSelectedIds(new Set()); setInsertMenu(null); setInsertImageMode(false); setNotePopup(null); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -288,6 +289,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     if (readOnly) return;
     e.stopPropagation();
     setInsertMenu(null);
+    setNotePopup(null);
     if (e.shiftKey) {
       setSelectedIds(prev => {
         const s = new Set(prev);
@@ -303,6 +305,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   };
 
   const onBgMouseDown = (e: React.MouseEvent) => {
+    setNotePopup(null);
     if (insertMenu) { setInsertMenu(null); setInsertImageMode(false); return; }
     if (editingId) commitEdit();
     if (!readOnly) setSelectedIds(new Set());
@@ -365,6 +368,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseLeave}
         onWheel={onWheel}
+        onContextMenu={e => e.preventDefault()}
       >
         <rect width="100%" height="100%" fill="transparent" onMouseDown={onBgMouseDown} />
         <g transform={`translate(${svgSize.w / 2 + pan.x},${svgSize.h / 2 + pan.y}) scale(${zoom})`}>
@@ -411,7 +415,22 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                     style={{ pointerEvents: "none" }}
                   >{label}</text>
                 )}
-                {node.note && <circle cx={w / 2 - 6} cy={-h / 2 + 6} r={4} fill="#fbbf24" style={{ pointerEvents: "none" }} />}
+                {node.note && (
+                  <g
+                    onClick={e => {
+                      e.stopPropagation();
+                      const svg = svgRef.current;
+                      if (!svg) return;
+                      const r = svg.getBoundingClientRect();
+                      setNotePopup({ nodeId: node.id, x: e.clientX - r.left, y: e.clientY - r.top });
+                    }}
+                    onMouseDown={e => e.stopPropagation()}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <circle cx={w / 2 - 6} cy={-h / 2 + 6} r={8} fill="transparent" />
+                    <circle cx={w / 2 - 6} cy={-h / 2 + 6} r={4} fill="#fbbf24" />
+                  </g>
+                )}
                 {node.url && <circle cx={w / 2 - (node.note ? 16 : 6)} cy={-h / 2 + 6} r={4} fill="#60a5fa" style={{ pointerEvents: "none" }} />}
                 {node.imageUrl && (
                   <image href={node.imageUrl} x={-w / 2} y={h / 2 + 4} width={w} height={40} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: "none" }} />
@@ -469,6 +488,22 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           screenY={toolbarPos.y}
           onUpdate={updated => updateNodes(nodes.map(n => n.id === selectedId ? updated : n))}
         />
+      )}
+
+      {notePopup && (
+        <div
+          className="absolute z-50 bg-white rounded-xl shadow-lg border border-gray-100 p-4 w-64"
+          style={{ left: notePopup.x + 10, top: notePopup.y + 10 }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-400">💬 メモ</span>
+            <button onClick={() => setNotePopup(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+          </div>
+          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+            {nodes.find(n => n.id === notePopup.nodeId)?.note}
+          </p>
+        </div>
       )}
 
       {!readOnly && insertMenu && (
