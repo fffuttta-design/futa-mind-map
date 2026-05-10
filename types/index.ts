@@ -35,4 +35,5 @@ export interface MindMap {
   folder?: string;
   tags?: string[];
   isPublic?: boolean;
+  edgeStyle?: "curve" | "straight";
 }

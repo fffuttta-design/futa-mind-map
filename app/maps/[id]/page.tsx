@@ -28,6 +28,7 @@ export default function MapEditorPage() {
   const [map, setMap] = useState<MindMap | null>(null);
   const [title, setTitle] = useState("");
   const [isPublic, setIsPublic] = useState(false);
+  const [edgeStyle, setEdgeStyle] = useState<"curve" | "straight">("curve");
   const [showShareUrl, setShowShareUrl] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -49,6 +50,7 @@ export default function MapEditorPage() {
         setMap(data);
         setTitle(data.title);
         setIsPublic(data.isPublic ?? false);
+        setEdgeStyle(data.edgeStyle ?? "curve");
       }
     });
     return unsub;
@@ -138,6 +140,14 @@ export default function MapEditorPage() {
             className="px-3 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
           >PNG</button>
           <button
+            onClick={async () => {
+              const next: "curve" | "straight" = edgeStyle === "curve" ? "straight" : "curve";
+              setEdgeStyle(next);
+              await updateDoc(doc(db, "maps", id), { edgeStyle: next });
+            }}
+            className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+          >{edgeStyle === "curve" ? "〜 曲線" : "━ 直線"}</button>
+          <button
             onClick={togglePublic}
             className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${isPublic ? "bg-green-100 text-green-600 hover:bg-green-200" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
           >{isPublic ? "🔓 公開中" : "🔒 共有"}</button>
@@ -179,8 +189,8 @@ export default function MapEditorPage() {
             </div>
           )}
           {historyPreview
-            ? <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly />
-            : <MindMapCanvas initialNodes={map.nodes} onNodesChange={saveNodes} exportRef={exportRef} />
+            ? <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly edgeStyle={edgeStyle} />
+            : <MindMapCanvas initialNodes={map.nodes} onNodesChange={saveNodes} exportRef={exportRef} edgeStyle={edgeStyle} />
           }
         </div>
 

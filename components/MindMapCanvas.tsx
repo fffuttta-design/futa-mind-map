@@ -9,6 +9,7 @@ interface Props {
   onNodesChange: (nodes: MindMapNode[]) => void;
   readOnly?: boolean;
   exportRef?: React.MutableRefObject<{ exportSVG: () => void; exportPNG: () => void } | null>;
+  edgeStyle?: "curve" | "straight";
 }
 
 const NODE_H = 34;
@@ -62,7 +63,8 @@ function calcEdgePoints(parent: MindMapNode, child: MindMapNode) {
   }
 }
 
-function makeEdgePath(x1: number, y1: number, x2: number, y2: number, v: boolean): string {
+function makeEdgePath(x1: number, y1: number, x2: number, y2: number, v: boolean, style: "curve" | "straight" = "curve"): string {
+  if (style === "straight") return `M ${x1},${y1} L ${x2},${y2}`;
   if (v) {
     const cy = (y1 + y2) / 2;
     return `M ${x1},${y1} C ${x1},${cy} ${x2},${cy} ${x2},${y2}`;
@@ -91,7 +93,7 @@ function NodeShape({ node, w, h, isSelected }: { node: MindMapNode; w: number; h
   }
 }
 
-function buildExportSVG(nodes: MindMapNode[]): string {
+function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = "curve"): string {
   const pad = 60;
   const xs = nodes.map(n => [n.x - nodeWidth(n) / 2, n.x + nodeWidth(n) / 2]).flat();
   const ys = nodes.map(n => [n.y - nodeHeight(n) / 2, n.y + nodeHeight(n) / 2]).flat();
@@ -102,7 +104,7 @@ function buildExportSVG(nodes: MindMapNode[]): string {
   const edges = nodes.filter(n => n.parentId && vids.has(n.parentId)).map(n => {
     const p = nodes.find(x => x.id === n.parentId)!;
     const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
-    return `<path d="${makeEdgePath(x1, y1, x2, y2, v)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>`;
+    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>`;
   }).join("\n");
 
   const nodeEls = nodes.map(node => {
@@ -129,7 +131,7 @@ function buildExportSVG(nodes: MindMapNode[]): string {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${nodeEls}\n</svg>`;
 }
 
-export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = false, exportRef }: Props) {
+export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = false, exportRef, edgeStyle = "curve" }: Props) {
   const [nodes, setNodes] = useState<MindMapNode[]>(initialNodes);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -412,12 +414,12 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
 
   const exportSVG = useCallback(() => {
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([buildExportSVG(nodes)], { type: "image/svg+xml" }));
+    a.href = URL.createObjectURL(new Blob([buildExportSVG(nodes, edgeStyle)], { type: "image/svg+xml" }));
     a.download = "mindmap.svg"; a.click();
-  }, [nodes]);
+  }, [nodes, edgeStyle]);
 
   const exportPNG = useCallback(() => {
-    const s = buildExportSVG(nodes);
+    const s = buildExportSVG(nodes, edgeStyle);
     const pad = 60;
     const xs = nodes.map(n => [n.x - nodeWidth(n) / 2, n.x + nodeWidth(n) / 2]).flat();
     const ys = nodes.map(n => [n.y - nodeHeight(n) / 2, n.y + nodeHeight(n) / 2]).flat();
@@ -692,7 +694,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
             const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
             return (
               <path key={`e-${n.id}`}
-                d={makeEdgePath(x1, y1, x2, y2, v)}
+                d={makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}
                 fill="none" stroke={n.color} strokeWidth={2} strokeOpacity={0.45}
               />
             );
