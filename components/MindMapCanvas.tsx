@@ -858,20 +858,39 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           </span>
           <div className="w-px h-5 bg-gray-200 mx-0.5" />
           {/* 横方向揃え */}
-          <button title="左揃え" onClick={alignSelectedLeft}    className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊣</button>
-          <button title="中央揃え（横）" onClick={alignSelectedCenterH} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊕</button>
-          <button title="右揃え" onClick={alignSelectedRight}   className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊢</button>
+          {([
+            { label: "⊣", tip: "左揃え",      fn: alignSelectedLeft },
+            { label: "⊕", tip: "中央揃え（横）", fn: alignSelectedCenterH },
+            { label: "⊢", tip: "右揃え",      fn: alignSelectedRight },
+          ] as const).map(({ label, tip, fn }) => (
+            <div key={tip} className="relative group">
+              <button onClick={fn} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">{label}</button>
+              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">{tip}</span>
+            </div>
+          ))}
           <div className="w-px h-5 bg-gray-200 mx-0.5" />
           {/* 縦方向揃え */}
-          <button title="上揃え" onClick={alignSelectedTop}     className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊤</button>
-          <button title="中央揃え（縦）" onClick={alignSelectedCenterV} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊗</button>
-          <button title="下揃え" onClick={alignSelectedBottom}  className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊥</button>
+          {([
+            { label: "⊤", tip: "上揃え",      fn: alignSelectedTop },
+            { label: "⊗", tip: "中央揃え（縦）", fn: alignSelectedCenterV },
+            { label: "⊥", tip: "下揃え",      fn: alignSelectedBottom },
+          ] as const).map(({ label, tip, fn }) => (
+            <div key={tip} className="relative group">
+              <button onClick={fn} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">{label}</button>
+              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">{tip}</span>
+            </div>
+          ))}
           <div className="w-px h-5 bg-gray-200 mx-0.5" />
           {/* 等間隔配置（3個以上で有効）*/}
-          <button title="水平に等間隔" onClick={distributeSelectedH} disabled={selectedIds.size < 3}
-            className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors disabled:opacity-30">↔</button>
-          <button title="垂直に等間隔" onClick={distributeSelectedV} disabled={selectedIds.size < 3}
-            className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors disabled:opacity-30">↕</button>
+          {([
+            { label: "↔", tip: "水平に等間隔", fn: distributeSelectedH },
+            { label: "↕", tip: "垂直に等間隔", fn: distributeSelectedV },
+          ] as const).map(({ label, tip, fn }) => (
+            <div key={tip} className="relative group">
+              <button onClick={fn} disabled={selectedIds.size < 3} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors disabled:opacity-30">{label}</button>
+              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">{tip}</span>
+            </div>
+          ))}
         </div>
       )}
 
