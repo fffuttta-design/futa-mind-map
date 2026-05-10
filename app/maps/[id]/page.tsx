@@ -32,7 +32,6 @@ export default function MapEditorPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyMenuId, setHistoryMenuId] = useState<string | null>(null);
-  const [historyPreview, setHistoryPreview] = useState<HistoryEntry | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<{ exportSVG: () => void; exportPNG: () => void } | null>(null);
   const lastHistorySave = useRef<number>(0);
@@ -110,32 +109,6 @@ export default function MapEditorPage() {
 
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/share/${id}` : "";
 
-  // ④ Version history preview modal
-  if (historyPreview) {
-    return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-gray-50">
-        <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shrink-0">
-          <span className="text-sm font-semibold text-gray-700">
-            🕐 プレビュー — {new Date(historyPreview.savedAt).toLocaleString("ja-JP", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-          </span>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">読み取り専用</span>
-          <div className="flex-1" />
-          <button
-            onClick={async () => { await restoreVersion(historyPreview.nodes); setHistoryPreview(null); }}
-            className="px-4 py-1.5 text-xs bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors font-medium"
-          >このバージョンを復元する</button>
-          <button
-            onClick={() => setHistoryPreview(null)}
-            className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors"
-          >閉じる</button>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly />
-        </div>
-      </div>
-    );
-  }
-
   if (loading || !map) {
     return <div className="flex items-center justify-center min-h-screen text-gray-400 text-sm">読み込み中...</div>;
   }
@@ -203,12 +176,9 @@ export default function MapEditorPage() {
                   <p className="text-xs text-gray-400 font-semibold mt-3 mb-1 px-1">{group.date}</p>
                   {group.entries.map(entry => (
                     <div key={entry.id} className="relative flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50 group">
-                      <button
-                        onClick={e => { e.stopPropagation(); setHistoryPreview(entry); }}
-                        className="text-sm text-gray-700 hover:text-indigo-600 text-left flex-1"
-                      >
+                      <span className="text-sm text-gray-700">
                         {new Date(entry.savedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                      </button>
+                      </span>
                       <button
                         onClick={e => { e.stopPropagation(); setHistoryMenuId(historyMenuId === entry.id ? null : entry.id); }}
                         className="text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none px-1"
