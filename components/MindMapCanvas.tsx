@@ -865,7 +865,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           ] as const).map(({ label, tip, fn }) => (
             <div key={tip} className="relative group">
               <button onClick={fn} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">{label}</button>
-              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">{tip}</span>
+              <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">{tip}</span>
             </div>
           ))}
           <div className="w-px h-5 bg-gray-200 mx-0.5" />
@@ -877,7 +877,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           ] as const).map(({ label, tip, fn }) => (
             <div key={tip} className="relative group">
               <button onClick={fn} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">{label}</button>
-              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">{tip}</span>
+              <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">{tip}</span>
             </div>
           ))}
           <div className="w-px h-5 bg-gray-200 mx-0.5" />
@@ -888,7 +888,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           ] as const).map(({ label, tip, fn }) => (
             <div key={tip} className="relative group">
               <button onClick={fn} disabled={selectedIds.size < 3} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors disabled:opacity-30">{label}</button>
-              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">{tip}</span>
+              <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">{tip}</span>
             </div>
           ))}
         </div>
