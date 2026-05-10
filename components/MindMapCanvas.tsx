@@ -895,9 +895,11 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
             color: editorTextColor,
             resize: "none",
             overflow: "hidden",
-            lineHeight: `${LINE_H}px`,
+            lineHeight: `${LINE_H * zoom}px`,
+            paddingTop: TEXT_PAD / 2 * zoom,
+            paddingBottom: TEXT_PAD / 2 * zoom,
           }}
-          className="text-center font-medium bg-transparent border-none outline-none px-2 py-2"
+          className="text-center font-medium bg-transparent border-none outline-none px-2"
         />
       )}
 
