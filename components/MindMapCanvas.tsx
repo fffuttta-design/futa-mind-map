@@ -642,7 +642,10 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           })}
 
           {visible.map(node => {
-            const w = nodeWidth(node), h = nodeHeight(node);
+            // 改修③: 編集中は editText でサイズ計算 → 改行と同時に図形が拡大
+            const isEditing = editingId === node.id;
+            const renderNode = isEditing ? { ...node, text: editText } : node;
+            const w = nodeWidth(renderNode), h = nodeHeight(renderNode);
             const isSelected = selectedIds.has(node.id);
             const isImageNode = !!node.imageWidth;
             const textLines = node.text.split("\n");
