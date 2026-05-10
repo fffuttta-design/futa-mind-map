@@ -353,6 +353,63 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     setNodeCtxMenu(null);
   }, [nodes, updateNodes]);
 
+  // ─── 範囲選択ノード整列 ───
+  const applyAlignUpdate = useCallback((updater: (sel: MindMapNode[]) => MindMapNode[]) => {
+    const sel = nodesRef.current.filter(n => selectedIds.has(n.id));
+    if (sel.length < 2) return;
+    pushUndo();
+    const moved = updater(sel);
+    const movedMap = new Map(moved.map(n => [n.id, n]));
+    const updated = nodesRef.current.map(n => movedMap.get(n.id) ?? n);
+    setNodes(updated);
+    onNodesChangeRef.current(updated);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, pushUndo]);
+
+  const alignSelectedLeft   = useCallback(() => applyAlignUpdate(sel => {
+    const edge = Math.min(...sel.map(n => n.x - nodeWidth(n) / 2));
+    return sel.map(n => ({ ...n, x: edge + nodeWidth(n) / 2 }));
+  }), [applyAlignUpdate]);
+
+  const alignSelectedCenterH = useCallback(() => applyAlignUpdate(sel => {
+    const cx = sel.reduce((s, n) => s + n.x, 0) / sel.length;
+    return sel.map(n => ({ ...n, x: cx }));
+  }), [applyAlignUpdate]);
+
+  const alignSelectedRight  = useCallback(() => applyAlignUpdate(sel => {
+    const edge = Math.max(...sel.map(n => n.x + nodeWidth(n) / 2));
+    return sel.map(n => ({ ...n, x: edge - nodeWidth(n) / 2 }));
+  }), [applyAlignUpdate]);
+
+  const alignSelectedTop    = useCallback(() => applyAlignUpdate(sel => {
+    const edge = Math.min(...sel.map(n => n.y - nodeHeight(n) / 2));
+    return sel.map(n => ({ ...n, y: edge + nodeHeight(n) / 2 }));
+  }), [applyAlignUpdate]);
+
+  const alignSelectedCenterV = useCallback(() => applyAlignUpdate(sel => {
+    const cy = sel.reduce((s, n) => s + n.y, 0) / sel.length;
+    return sel.map(n => ({ ...n, y: cy }));
+  }), [applyAlignUpdate]);
+
+  const alignSelectedBottom = useCallback(() => applyAlignUpdate(sel => {
+    const edge = Math.max(...sel.map(n => n.y + nodeHeight(n) / 2));
+    return sel.map(n => ({ ...n, y: edge - nodeHeight(n) / 2 }));
+  }), [applyAlignUpdate]);
+
+  const distributeSelectedH = useCallback(() => applyAlignUpdate(sel => {
+    if (sel.length < 3) return sel;
+    const sorted = [...sel].sort((a, b) => a.x - b.x);
+    const step = (sorted[sorted.length - 1].x - sorted[0].x) / (sorted.length - 1);
+    return sorted.map((n, i) => ({ ...n, x: sorted[0].x + i * step }));
+  }), [applyAlignUpdate]);
+
+  const distributeSelectedV = useCallback(() => applyAlignUpdate(sel => {
+    if (sel.length < 3) return sel;
+    const sorted = [...sel].sort((a, b) => a.y - b.y);
+    const step = (sorted[sorted.length - 1].y - sorted[0].y) / (sorted.length - 1);
+    return sorted.map((n, i) => ({ ...n, y: sorted[0].y + i * step }));
+  }), [applyAlignUpdate]);
+
   const exportSVG = useCallback(() => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([buildExportSVG(nodes)], { type: "image/svg+xml" }));
@@ -790,10 +847,31 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         </g>
       </svg>
 
-      {/* 複数選択バッジ */}
-      {selectedIds.size > 1 && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-indigo-500 text-white text-xs px-3 py-1 rounded-full shadow pointer-events-none">
-          {selectedIds.size}個選択中 — 右クリックで一括書式変更
+      {/* 複数選択 整列ツールバー */}
+      {selectedIds.size > 1 && !readOnly && (
+        <div
+          className="absolute top-3 left-1/2 -translate-x-1/2 bg-white rounded-xl shadow-lg border border-gray-100 px-2 py-1.5 flex items-center gap-0.5"
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <span className="text-xs text-indigo-600 font-semibold px-1.5 py-0.5 bg-indigo-50 rounded-lg mr-1 shrink-0">
+            {selectedIds.size}個
+          </span>
+          <div className="w-px h-5 bg-gray-200 mx-0.5" />
+          {/* 横方向揃え */}
+          <button title="左揃え" onClick={alignSelectedLeft}    className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊣</button>
+          <button title="中央揃え（横）" onClick={alignSelectedCenterH} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊕</button>
+          <button title="右揃え" onClick={alignSelectedRight}   className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊢</button>
+          <div className="w-px h-5 bg-gray-200 mx-0.5" />
+          {/* 縦方向揃え */}
+          <button title="上揃え" onClick={alignSelectedTop}     className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊤</button>
+          <button title="中央揃え（縦）" onClick={alignSelectedCenterV} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊗</button>
+          <button title="下揃え" onClick={alignSelectedBottom}  className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊥</button>
+          <div className="w-px h-5 bg-gray-200 mx-0.5" />
+          {/* 等間隔配置（3個以上で有効）*/}
+          <button title="水平に等間隔" onClick={distributeSelectedH} disabled={selectedIds.size < 3}
+            className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors disabled:opacity-30">↔</button>
+          <button title="垂直に等間隔" onClick={distributeSelectedV} disabled={selectedIds.size < 3}
+            className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors disabled:opacity-30">↕</button>
         </div>
       )}
 
