@@ -111,32 +111,6 @@ export default function MapEditorPage() {
 
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/share/${id}` : "";
 
-  // ④ 履歴プレビューモーダル（ローディング前に表示）
-  if (historyPreview) {
-    return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-gray-50">
-        <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shrink-0">
-          <span className="text-sm font-semibold text-gray-700">
-            🕐 プレビュー — {new Date(historyPreview.savedAt).toLocaleString("ja-JP", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-          </span>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">読み取り専用</span>
-          <div className="flex-1" />
-          <button
-            onClick={async () => { await restoreVersion(historyPreview.nodes); }}
-            className="px-4 py-1.5 text-xs bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors font-medium"
-          >このバージョンを復元する</button>
-          <button
-            onClick={() => setHistoryPreview(null)}
-            className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors"
-          >閉じる</button>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly />
-        </div>
-      </div>
-    );
-  }
-
   if (loading || !map) {
     return <div className="flex items-center justify-center min-h-screen text-gray-400 text-sm">読み込み中...</div>;
   }
@@ -185,8 +159,29 @@ export default function MapEditorPage() {
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-hidden">
-          <MindMapCanvas initialNodes={map.nodes} onNodesChange={saveNodes} exportRef={exportRef} />
+        <div className="flex-1 overflow-hidden relative">
+          {/* ① 履歴プレビュー中はバナーを表示して readOnly キャンバスに切り替え（サイドバーはそのまま）*/}
+          {historyPreview && (
+            <div className="absolute top-0 left-0 right-0 z-10 bg-indigo-50 border-b border-indigo-100 px-4 py-2 flex items-center gap-3 shrink-0">
+              <span className="text-xs font-semibold text-indigo-700">
+                🕐 プレビュー — {new Date(historyPreview.savedAt).toLocaleString("ja-JP", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </span>
+              <span className="text-xs text-indigo-400 bg-indigo-100 px-2 py-0.5 rounded">読み取り専用</span>
+              <div className="flex-1" />
+              <button
+                onClick={async () => { await restoreVersion(historyPreview.nodes); }}
+                className="px-3 py-1 text-xs bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors font-medium"
+              >このバージョンを復元する</button>
+              <button
+                onClick={() => setHistoryPreview(null)}
+                className="px-3 py-1 text-xs bg-white text-gray-600 rounded-lg hover:bg-gray-100 border border-gray-200 transition-colors"
+              >閉じる</button>
+            </div>
+          )}
+          {historyPreview
+            ? <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly />
+            : <MindMapCanvas initialNodes={map.nodes} onNodesChange={saveNodes} exportRef={exportRef} />
+          }
         </div>
 
         {showHistory && (
