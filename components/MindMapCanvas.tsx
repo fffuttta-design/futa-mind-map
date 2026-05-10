@@ -32,6 +32,35 @@ function nodeHeight(node: MindMapNode): number {
   return Math.max(NODE_H, lines * LINE_H + TEXT_PAD);
 }
 
+/** ④ 親子の相対位置から接続点と方向を計算 */
+function calcEdgePoints(parent: MindMapNode, child: MindMapNode) {
+  const pw = nodeWidth(parent), ph = nodeHeight(parent);
+  const cw = nodeWidth(child), ch = nodeHeight(child);
+  const dx = child.x - parent.x;
+  const dy = child.y - parent.y;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    // 横方向が支配的 → 右端 or 左端で接続
+    return dx >= 0
+      ? { x1: parent.x + pw / 2, y1: parent.y,  x2: child.x - cw / 2, y2: child.y,  v: false }
+      : { x1: parent.x - pw / 2, y1: parent.y,  x2: child.x + cw / 2, y2: child.y,  v: false };
+  } else {
+    // 縦方向が支配的 → 下端 or 上端で接続
+    return dy >= 0
+      ? { x1: parent.x, y1: parent.y + ph / 2, x2: child.x, y2: child.y - ch / 2, v: true }
+      : { x1: parent.x, y1: parent.y - ph / 2, x2: child.x, y2: child.y + ch / 2, v: true };
+  }
+}
+
+/** ④ 縦横に応じたベジェ曲線パス生成 */
+function makeEdgePath(x1: number, y1: number, x2: number, y2: number, v: boolean): string {
+  if (v) {
+    const cy = (y1 + y2) / 2;
+    return `M ${x1},${y1} C ${x1},${cy} ${x2},${cy} ${x2},${y2}`;
+  }
+  const cx = (x1 + x2) / 2;
+  return `M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}`;
+}
+
 function NodeShape({ node, w, h, isSelected }: { node: MindMapNode; w: number; h: number; isSelected: boolean }) {
   const fill = node.color;
   const stroke = isSelected ? "#1e293b" : "transparent";
@@ -62,9 +91,8 @@ function buildExportSVG(nodes: MindMapNode[]): string {
 
   const edges = nodes.filter(n => n.parentId && vids.has(n.parentId)).map(n => {
     const p = nodes.find(x => x.id === n.parentId)!;
-    const x1 = p.x + nodeWidth(p) / 2, y1 = p.y, x2 = n.x - nodeWidth(n) / 2, y2 = n.y;
-    const cx = (x1 + x2) / 2;
-    return `<path d="M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>`;
+    const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
+    return `<path d="${makeEdgePath(x1, y1, x2, y2, v)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>`;
   }).join("\n");
 
   const nodeEls = nodes.map(node => {
@@ -543,11 +571,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   const visible = getVisibleNodes(nodes);
   const visibleIds = new Set(visible.map(n => n.id));
 
-  const edgePath = (x1: number, y1: number, x2: number, y2: number) => {
-    const cx = (x1 + x2) / 2;
-    return `M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}`;
-  };
-
   const editingNode = editingId ? nodes.find(n => n.id === editingId) : null;
   const editorTextColor = editingNode?.shape === "text"
     ? (editingNode.textColor ?? editingNode.color)
@@ -569,9 +592,10 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         <g transform={`translate(${svgSize.w / 2 + pan.x},${svgSize.h / 2 + pan.y}) scale(${zoom})`}>
           {visible.filter(n => n.parentId && visibleIds.has(n.parentId)).map(n => {
             const p = nodes.find(x => x.id === n.parentId)!;
+            const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
             return (
               <path key={`e-${n.id}`}
-                d={edgePath(p.x + nodeWidth(p) / 2, p.y, n.x - nodeWidth(n) / 2, n.y)}
+                d={makeEdgePath(x1, y1, x2, y2, v)}
                 fill="none" stroke={n.color} strokeWidth={2} strokeOpacity={0.45}
               />
             );
