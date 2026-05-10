@@ -143,6 +143,27 @@ export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props)
 
           {tab === "media" && (
             <div className="space-y-3">
+              {/* 改修: ローカルファイルアップロード */}
+              <div>
+                <p className="text-xs text-gray-500 mb-2">ローカル画像</p>
+                <label className="flex items-center justify-center gap-2 w-full px-3 py-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                  📁 ファイルを選択
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = ev => {
+                        onUpdate({ ...node, imageUrl: ev.target?.result as string });
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+              </div>
               <div>
                 <p className="text-xs text-gray-500 mb-2">アイコン</p>
                 <div className="grid grid-cols-8 gap-1">

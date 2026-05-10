@@ -15,6 +15,19 @@ const NODE_H = 34;
 const LINE_H = 20;
 const TEXT_PAD = 16;
 
+// 改修② コンテキストメニュー用定数
+const CTX_COLORS = [
+  "#6366f1","#8b5cf6","#ec4899","#ef4444",
+  "#f97316","#f59e0b","#10b981","#14b8a6",
+  "#3b82f6","#06b6d4","#64748b","#1e293b",
+];
+const CTX_TEXT_COLORS = ["#ffffff","#1e293b","#ef4444","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ec4899"];
+const CTX_SHAPES = [
+  { id: "pill", l: "⬭" }, { id: "rect", l: "▭" }, { id: "circle", l: "⊙" },
+  { id: "diamond", l: "◇" }, { id: "text", l: "T" },
+] as const;
+const CTX_SIZES = [11, 13, 15, 17] as const;
+
 function nodeWidth(node: MindMapNode): number {
   if (node.imageWidth) return node.imageWidth;
   const maxLineLen = Math.max(...node.text.split("\n").map(l => l.length), 1);
@@ -39,19 +52,16 @@ function calcEdgePoints(parent: MindMapNode, child: MindMapNode) {
   const dx = child.x - parent.x;
   const dy = child.y - parent.y;
   if (Math.abs(dx) >= Math.abs(dy)) {
-    // 横方向が支配的 → 右端 or 左端で接続
     return dx >= 0
       ? { x1: parent.x + pw / 2, y1: parent.y,  x2: child.x - cw / 2, y2: child.y,  v: false }
       : { x1: parent.x - pw / 2, y1: parent.y,  x2: child.x + cw / 2, y2: child.y,  v: false };
   } else {
-    // 縦方向が支配的 → 下端 or 上端で接続
     return dy >= 0
       ? { x1: parent.x, y1: parent.y + ph / 2, x2: child.x, y2: child.y - ch / 2, v: true }
       : { x1: parent.x, y1: parent.y - ph / 2, x2: child.x, y2: child.y + ch / 2, v: true };
   }
 }
 
-/** ④ 縦横に応じたベジェ曲線パス生成 */
 function makeEdgePath(x1: number, y1: number, x2: number, y2: number, v: boolean): string {
   if (v) {
     const cy = (y1 + y2) / 2;
@@ -141,8 +151,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     startW: number; startH: number; startNx: number; startNy: number;
   } | null>(null);
   const [editorStyle, setEditorStyle] = useState<{ left: number; top: number; width: number; height: number; fontSize: number } | null>(null);
-  // ③ ノード右クリックメニュー
   const [nodeCtxMenu, setNodeCtxMenu] = useState<{ nodeId: string; sx: number; sy: number } | null>(null);
+  // 相談: ラバーバンド（範囲選択）
+  const [rubberBand, setRubberBand] = useState<{ sx: number; sy: number; ex: number; ey: number } | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -157,6 +168,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   const zoomRef = useRef(zoom);
   const onNodesChangeRef = useRef(onNodesChange);
   const editingIdRef = useRef(editingId);
+  const rubberBandRef = useRef(rubberBand);
   nodesRef.current = nodes;
   draggingRef.current = dragging;
   resizingRef.current = resizing;
@@ -164,8 +176,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   zoomRef.current = zoom;
   onNodesChangeRef.current = onNodesChange;
   editingIdRef.current = editingId;
+  rubberBandRef.current = rubberBand;
 
-  // ② Undo / Redo スタック
+  // Undo / Redo
   const undoStack = useRef<MindMapNode[][]>([]);
   const redoStack = useRef<MindMapNode[][]>([]);
 
@@ -178,7 +191,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setNodes(initialNodes); }, [initialNodes]);
 
-  // SVG サイズ監視
   useEffect(() => {
     if (!svgRef.current) return;
     const obs = new ResizeObserver(entries => {
@@ -189,7 +201,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     return () => obs.disconnect();
   }, []);
 
-  // ツールバー位置
   useEffect(() => {
     const svg = svgRef.current;
     const node = selectedId ? nodes.find(n => n.id === selectedId) : undefined;
@@ -204,7 +215,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     }
   }, [selectedId, nodes, pan, zoom]);
 
-  // インラインエディタ位置（行数で高さ動的変化）
   useEffect(() => {
     const svg = svgRef.current;
     const node = editingId ? nodes.find(n => n.id === editingId) : undefined;
@@ -222,12 +232,11 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   }, [editingId, nodes, pan, zoom, editText]);
 
   const updateNodes = useCallback((updated: MindMapNode[]) => {
-    pushUndo(); // ② 変更前にスナップショットを保存
+    pushUndo();
     setNodes(updated);
     onNodesChange(updated);
   }, [onNodesChange, pushUndo]);
 
-  // ② Undo
   const undo = useCallback(() => {
     if (undoStack.current.length === 0) return;
     const prev = undoStack.current.pop()!;
@@ -236,7 +245,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     onNodesChangeRef.current(prev);
   }, []);
 
-  // ② Redo
   const redo = useCallback(() => {
     if (redoStack.current.length === 0) return;
     const next = redoStack.current.pop()!;
@@ -327,21 +335,16 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     setInsertImageUrl("");
   }, [nodes, updateNodes]);
 
-  // ③ 兄弟ノード整列
   const alignSiblings = useCallback((nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
     const siblings = nodes.filter(n => n.parentId === node.parentId).sort((a, b) => a.y - b.y);
     if (siblings.length <= 1) return;
-    // 兄弟ノードの最大高さ + 余白でスペーシング計算
     const maxH = Math.max(...siblings.map(s => nodeHeight(s)));
     const spacing = maxH + 24;
-    // 平均 x に揃える
     const avgX = siblings.reduce((s, n) => s + n.x, 0) / siblings.length;
-    // 平均 y を中心に均等配置
     const avgY = siblings.reduce((s, n) => s + n.y, 0) / siblings.length;
-    const totalH = (siblings.length - 1) * spacing;
-    const startY = avgY - totalH / 2;
+    const startY = avgY - (siblings.length - 1) * spacing / 2;
     updateNodes(nodes.map(n => {
       const idx = siblings.findIndex(s => s.id === n.id);
       if (idx === -1) return n;
@@ -382,14 +385,11 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     if (exportRef) exportRef.current = { exportSVG, exportPNG };
   }, [exportRef, exportSVG, exportPNG]);
 
-  // キーボードショートカット
   useEffect(() => {
     if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
-      // ② Ctrl+Z / Ctrl+Y は編集中でも常に動作
       if (e.ctrlKey && (e.key === "z" || e.key === "Z")) { e.preventDefault(); undo(); return; }
       if (e.ctrlKey && (e.key === "y" || e.key === "Y")) { e.preventDefault(); redo(); return; }
-
       if (editingIdRef.current) { if (e.key === "Escape") setEditingId(null); return; }
       if (selectedIds.size === 0) return;
       const id = [...selectedIds][0];
@@ -401,11 +401,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         if (n) { setEditingId(id); setEditText(n.text); }
       } else if (e.key === "Delete") { deleteNodes(selectedIds); }
       else if (e.key === "Escape") {
-        setSelectedIds(new Set());
-        setInsertMenu(null);
-        setInsertImageMode(false);
-        setNotePopup(null);
-        setNodeCtxMenu(null);
+        setSelectedIds(new Set()); setInsertMenu(null); setInsertImageMode(false);
+        setNotePopup(null); setNodeCtxMenu(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -438,11 +435,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           x: cx, y: cy, parentId: null, color: "#64748b",
           imageUrl: dataUrl, imageWidth: 200, imageHeight: 150,
         };
-        setNodes(prev => {
-          const updated = [...prev, newNode];
-          onNodesChangeRef.current(updated);
-          return updated;
-        });
+        setNodes(prev => { const updated = [...prev, newNode]; onNodesChangeRef.current(updated); return updated; });
         setSelectedIds(new Set([newNode.id]));
       };
       reader.readAsDataURL(file);
@@ -451,7 +444,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     return () => window.removeEventListener("paste", onPaste);
   }, [readOnly]);
 
-  // Window-level drag/resize（SVG外でもドラッグ追従）
+  // Window-level drag/resize/rubberband
   useEffect(() => {
     const getCanvasPos = (cx: number, cy: number) => {
       const svg = svgRef.current;
@@ -461,6 +454,12 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
       return { x: (cx - r.left - p.x - r.width / 2) / z, y: (cy - r.top - p.y - r.height / 2) / z };
     };
     const onMove = (e: MouseEvent) => {
+      // ラバーバンド更新
+      if (rubberBandRef.current) {
+        const cp = getCanvasPos(e.clientX, e.clientY);
+        setRubberBand(prev => prev ? { ...prev, ex: cp.x, ey: cp.y } : null);
+        return;
+      }
       const drag = draggingRef.current;
       if (drag) {
         const p = getCanvasPos(e.clientX, e.clientY);
@@ -487,7 +486,24 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           ? { ...n, imageWidth: newW, imageHeight: newH, x: newX, y: newY } : n));
       }
     };
-    const onUp = () => {
+    const onUp = (e: MouseEvent) => {
+      // ラバーバンド確定 → 範囲内ノードを選択
+      if (rubberBandRef.current) {
+        const rb = rubberBandRef.current;
+        const x1 = Math.min(rb.sx, rb.ex), x2 = Math.max(rb.sx, rb.ex);
+        const y1 = Math.min(rb.sy, rb.ey), y2 = Math.max(rb.sy, rb.ey);
+        if (x2 - x1 > 4 || y2 - y1 > 4) { // 微小ドラッグは無視
+          const selected = nodesRef.current
+            .filter(n => {
+              const nw = nodeWidth(n), nh = nodeHeight(n);
+              return n.x + nw / 2 >= x1 && n.x - nw / 2 <= x2 && n.y + nh / 2 >= y1 && n.y - nh / 2 <= y2;
+            })
+            .map(n => n.id);
+          setSelectedIds(new Set(selected));
+        }
+        setRubberBand(null);
+        return;
+      }
       if (draggingRef.current || resizingRef.current) {
         onNodesChangeRef.current(nodesRef.current);
         setDragging(null);
@@ -527,7 +543,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     if (!selectedIds.has(nodeId)) setSelectedIds(new Set([nodeId]));
     const node = nodes.find(n => n.id === nodeId)!;
     const p = toCanvas(e.clientX, e.clientY);
-    pushUndo(); // ② ドラッグ前にスナップショット
+    pushUndo();
     setDragging({ id: nodeId, ox: p.x - node.x, oy: p.y - node.y });
   };
 
@@ -536,11 +552,18 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     setNodeCtxMenu(null);
     if (insertMenu) { setInsertMenu(null); setInsertImageMode(false); return; }
     if (editingId) commitEdit();
+
+    // 相談: Shift+ドラッグ → ラバーバンド範囲選択
+    if (e.shiftKey && !readOnly) {
+      const cv = toCanvas(e.clientX, e.clientY);
+      setRubberBand({ sx: cv.x, sy: cv.y, ex: cv.x, ey: cv.y });
+      return;
+    }
+
     if (!readOnly) setSelectedIds(new Set());
     setPanStart({ mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y });
   };
 
-  // 背景右クリック → 挿入メニュー
   const onBgContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     if (readOnly) return;
@@ -555,13 +578,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     if (panStart) setPan({ x: panStart.px + e.clientX - panStart.mx, y: panStart.py + e.clientY - panStart.my });
   };
 
-  const onMouseUp = () => {
-    if (panStart) setPanStart(null);
-  };
-
-  const onMouseLeave = () => {
-    setPanStart(null);
-  };
+  const onMouseUp = () => { if (panStart) setPanStart(null); };
+  const onMouseLeave = () => { setPanStart(null); };
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -576,12 +594,34 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
     ? (editingNode.textColor ?? editingNode.color)
     : (editingNode?.textColor ?? "white");
 
+  // 改修② コンテキストメニュー用: 対象ノードと一括適用ヘルパー
+  const ctxNode = nodeCtxMenu ? nodes.find(n => n.id === nodeCtxMenu.nodeId) : null;
+  const isBatch = selectedIds.size > 1 && ctxNode !== null && selectedIds.has(ctxNode?.id ?? "");
+  const applyFormat = useCallback((updates: Partial<MindMapNode>) => {
+    if (!nodeCtxMenu) return;
+    if (isBatch) {
+      setNodes(prev => {
+        const updated = prev.map(n => selectedIds.has(n.id) ? { ...n, ...updates } : n);
+        onNodesChangeRef.current(updated);
+        return updated;
+      });
+      undoStack.current.push([...nodesRef.current]);
+    } else {
+      setNodes(prev => {
+        const updated = prev.map(n => n.id === nodeCtxMenu.nodeId ? { ...n, ...updates } : n);
+        onNodesChangeRef.current(updated);
+        return updated;
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeCtxMenu, isBatch, selectedIds]);
+
   return (
     <div className="w-full h-full bg-gray-50 relative overflow-hidden select-none">
       <svg
         ref={svgRef}
         className="w-full h-full"
-        style={{ cursor: panStart ? "grabbing" : "grab" }}
+        style={{ cursor: rubberBand ? "crosshair" : panStart ? "grabbing" : "grab" }}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseLeave}
@@ -620,7 +660,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                   setEditingId(node.id);
                   setEditText(node.text);
                 }}
-                // ③ ノード右クリック → ノード専用メニュー
                 onContextMenu={e => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -628,7 +667,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                   const svg = svgRef.current;
                   if (!svg) return;
                   const r = svg.getBoundingClientRect();
-                  setSelectedIds(new Set([node.id]));
+                  if (!selectedIds.has(node.id)) setSelectedIds(new Set([node.id]));
                   setNodeCtxMenu({ nodeId: node.id, sx: e.clientX - r.left, sy: e.clientY - r.top });
                 }}
                 style={{ cursor: readOnly ? "default" : "pointer" }}
@@ -648,7 +687,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                         style={{ cursor: (corner === "se" || corner === "nw") ? "nwse-resize" : "nesw-resize" }}
                         onMouseDown={e => {
                           e.stopPropagation();
-                          pushUndo(); // ② リサイズ前にスナップショット
+                          pushUndo();
                           const cp = toCanvas(e.clientX, e.clientY);
                           setResizing({ id: node.id, corner, startCx: cp.x, startCy: cp.y, startW: w, startH: h, startNx: node.x, startNy: node.y });
                         }}
@@ -730,10 +769,32 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
               </g>
             );
           })}
+
+          {/* 相談: ラバーバンド選択矩形 */}
+          {rubberBand && (
+            <rect
+              x={Math.min(rubberBand.sx, rubberBand.ex)}
+              y={Math.min(rubberBand.sy, rubberBand.ey)}
+              width={Math.abs(rubberBand.ex - rubberBand.sx)}
+              height={Math.abs(rubberBand.ey - rubberBand.sy)}
+              fill="rgba(99,102,241,0.08)"
+              stroke="#6366f1"
+              strokeWidth={1.5 / zoom}
+              strokeDasharray={`${5 / zoom} ${3 / zoom}`}
+              style={{ pointerEvents: "none" }}
+            />
+          )}
         </g>
       </svg>
 
-      {/* インラインエディタ（textarea、Ctrl+Enter改行対応）*/}
+      {/* 複数選択バッジ */}
+      {selectedIds.size > 1 && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-indigo-500 text-white text-xs px-3 py-1 rounded-full shadow pointer-events-none">
+          {selectedIds.size}個選択中 — 右クリックで一括書式変更
+        </div>
+      )}
+
+      {/* インラインエディタ（Ctrl+Enter / Shift+Enter 改行対応）*/}
       {!readOnly && editingId && editorStyle && (
         <textarea
           ref={inputRef}
@@ -741,7 +802,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
           onChange={e => setEditText(e.target.value)}
           onBlur={commitEdit}
           onKeyDown={e => {
-            if (e.key === "Enter" && e.ctrlKey) { return; }
+            // 改修③: Ctrl+Enter または Shift+Enter → 改行
+            if (e.key === "Enter" && (e.ctrlKey || e.shiftKey)) { return; }
             if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); commitEdit(); }
             if (e.key === "Escape") { e.stopPropagation(); setEditingId(null); }
             if (e.key === "Tab") { e.preventDefault(); e.stopPropagation(); commitEdit(); setTimeout(() => addChild(editingId!), 30); }
@@ -783,7 +845,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         </div>
       )}
 
-      {/* 背景右クリックメニュー（テキスト・ノード・画像追加）*/}
+      {/* 背景右クリックメニュー */}
       {!readOnly && insertMenu && (
         <div
           className="absolute z-50 bg-white rounded-xl shadow-lg border border-gray-100 p-1.5 flex flex-col gap-0.5 min-w-[140px]"
@@ -793,46 +855,28 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         >
           {!insertImageMode ? (
             <>
-              <button
-                onClick={() => addFloatingTextNode(insertMenu.cx, insertMenu.cy)}
-                className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg"
-              >📝 テキスト</button>
-              <button
-                onClick={() => addFloatingNode(insertMenu.cx, insertMenu.cy)}
-                className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg"
-              >＋ ノード</button>
-              <button
-                onClick={() => setInsertImageMode(true)}
-                className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg"
-              >🖼️ 画像</button>
+              <button onClick={() => addFloatingTextNode(insertMenu.cx, insertMenu.cy)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">📝 テキスト</button>
+              <button onClick={() => addFloatingNode(insertMenu.cx, insertMenu.cy)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">＋ ノード</button>
+              <button onClick={() => setInsertImageMode(true)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">🖼️ 画像</button>
             </>
           ) : (
             <div className="flex flex-col gap-2 p-1">
               <p className="text-xs text-gray-400 font-medium">画像を追加</p>
               <label className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg cursor-pointer">
                 📁 ファイルから選択
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
+                <input type="file" accept="image/*" className="hidden"
                   onChange={e => {
                     const file = e.target.files?.[0];
                     if (!file || !insertMenu) return;
                     const reader = new FileReader();
-                    reader.onload = ev => {
-                      addFloatingImageNode(insertMenu.cx, insertMenu.cy, ev.target?.result as string);
-                    };
+                    reader.onload = ev => { addFloatingImageNode(insertMenu.cx, insertMenu.cy, ev.target?.result as string); };
                     reader.readAsDataURL(file);
                   }}
                 />
               </label>
               <div className="border-t border-gray-100 pt-2">
                 <p className="text-xs text-gray-400 mb-1">または URL</p>
-                <input
-                  autoFocus
-                  type="url"
-                  value={insertImageUrl}
-                  onChange={e => setInsertImageUrl(e.target.value)}
+                <input autoFocus type="url" value={insertImageUrl} onChange={e => setInsertImageUrl(e.target.value)}
                   onKeyDown={e => {
                     if (e.key === "Enter") { e.stopPropagation(); addFloatingImageNode(insertMenu.cx, insertMenu.cy, insertImageUrl); }
                     if (e.key === "Escape") { e.stopPropagation(); setInsertMenu(null); setInsertImageMode(false); }
@@ -840,8 +884,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
                   placeholder="https://..."
                   className="text-xs border border-gray-200 rounded px-2 py-1.5 outline-none focus:border-indigo-400 w-full"
                 />
-                <button
-                  onClick={() => addFloatingImageNode(insertMenu.cx, insertMenu.cy, insertImageUrl)}
+                <button onClick={() => addFloatingImageNode(insertMenu.cx, insertMenu.cy, insertImageUrl)}
                   disabled={!insertImageUrl.trim()}
                   className="mt-1.5 w-full px-3 py-1.5 text-xs bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-40 transition-colors"
                 >追加</button>
@@ -851,34 +894,91 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
         </div>
       )}
 
-      {/* ③ ノード右クリックメニュー（整列）*/}
-      {!readOnly && nodeCtxMenu && (
+      {/* 改修②: ノード右クリックメニュー（書式コントロール横並び + アクション）*/}
+      {!readOnly && nodeCtxMenu && ctxNode && (
         <div
-          className="absolute z-50 bg-white rounded-xl shadow-lg border border-gray-100 p-1.5 flex flex-col gap-0.5 min-w-[160px]"
-          style={{ left: nodeCtxMenu.sx, top: nodeCtxMenu.sy }}
+          className="absolute z-50 bg-white rounded-xl shadow-lg border border-gray-100 p-3 flex flex-col gap-2.5"
+          style={{ left: nodeCtxMenu.sx, top: nodeCtxMenu.sy, minWidth: 228 }}
           onMouseDown={e => e.stopPropagation()}
           onContextMenu={e => e.preventDefault()}
         >
-          <button
-            onClick={() => alignSiblings(nodeCtxMenu.nodeId)}
-            className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg"
-          >⚡ 兄弟ノードを整列</button>
-          <button
-            onClick={() => {
-              const node = nodes.find(n => n.id === nodeCtxMenu.nodeId);
-              if (node) { setEditingId(node.id); setEditText(node.text); }
+          {/* 複数選択表示 */}
+          {isBatch && (
+            <div className="text-xs text-indigo-600 font-semibold bg-indigo-50 rounded-lg px-2 py-1">
+              {selectedIds.size}個のノードに適用
+            </div>
+          )}
+
+          {/* 形 */}
+          <div>
+            <p className="text-xs text-gray-400 mb-1">形</p>
+            <div className="flex gap-1">
+              {CTX_SHAPES.map(s => (
+                <button key={s.id} onClick={() => applyFormat({ shape: s.id })}
+                  className={`flex-1 h-7 rounded border text-sm transition-colors ${(ctxNode.shape ?? "pill") === s.id ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}
+                >{s.l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* ノード色 */}
+          <div>
+            <p className="text-xs text-gray-400 mb-1">ノード色</p>
+            <div className="grid grid-cols-6 gap-1">
+              {CTX_COLORS.map(c => (
+                <button key={c} onClick={() => applyFormat({ color: c })}
+                  className="w-6 h-6 rounded-full border border-gray-200 hover:scale-110 transition-transform"
+                  style={{ backgroundColor: c, outline: ctxNode.color === c ? "2px solid #6366f1" : "none", outlineOffset: 1 }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* テキスト書式 */}
+          <div>
+            <p className="text-xs text-gray-400 mb-1">テキスト</p>
+            <div className="flex gap-1 mb-1.5">
+              <button onClick={() => applyFormat({ fontBold: !ctxNode.fontBold })}
+                className={`w-7 h-7 rounded border font-bold text-sm transition-colors ${ctxNode.fontBold ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
+              >B</button>
+              <button onClick={() => applyFormat({ fontItalic: !ctxNode.fontItalic })}
+                className={`w-7 h-7 rounded border italic text-sm transition-colors ${ctxNode.fontItalic ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
+              >i</button>
+              <div className="w-px bg-gray-200 mx-0.5" />
+              {CTX_SIZES.map(size => (
+                <button key={size} onClick={() => applyFormat({ fontSize: size })}
+                  className={`flex-1 h-7 rounded border text-xs transition-colors ${(ctxNode.fontSize ?? 13) === size ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}
+                >{size}</button>
+              ))}
+            </div>
+            {/* 文字色 */}
+            <div className="flex gap-1">
+              {CTX_TEXT_COLORS.map(c => (
+                <button key={c} onClick={() => applyFormat({ textColor: c })}
+                  className="w-6 h-6 rounded-full border border-gray-200 hover:scale-110 transition-transform"
+                  style={{ backgroundColor: c, outline: (ctxNode.textColor ?? "#ffffff") === c ? "2px solid #6366f1" : "none", outlineOffset: 1 }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* アクション */}
+          <div className="border-t border-gray-100 pt-2 flex flex-col gap-0.5">
+            <button onClick={() => alignSiblings(nodeCtxMenu.nodeId)}
+              className="w-full px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">⚡ 兄弟ノードを整列</button>
+            <button onClick={() => {
+              if (ctxNode) { setEditingId(ctxNode.id); setEditText(ctxNode.text); }
               setNodeCtxMenu(null);
-            }}
-            className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg"
-          >✏️ 名前を変更</button>
-          <div className="border-t border-gray-100 my-0.5" />
-          <button
-            onClick={() => { deleteNodes(new Set([nodeCtxMenu.nodeId])); setNodeCtxMenu(null); }}
-            className="px-3 py-2 text-sm text-left text-red-500 hover:bg-red-50 rounded-lg"
-          >🗑️ 削除</button>
+            }} className="w-full px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">✏️ 名前を変更</button>
+          </div>
+          <div className="border-t border-gray-100 pt-1">
+            <button onClick={() => { deleteNodes(isBatch ? selectedIds : new Set([nodeCtxMenu.nodeId])); setNodeCtxMenu(null); }}
+              className="w-full px-3 py-1.5 text-sm text-left text-red-500 hover:bg-red-50 rounded-lg">
+              🗑️ {isBatch ? `${selectedIds.size}個を削除` : "削除"}
+            </button>
+          </div>
         </div>
       )}
-
     </div>
   );
 }
