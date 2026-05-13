@@ -136,7 +136,11 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
-  const [dragging, setDragging] = useState<{ id: string; ox: number; oy: number } | null>(null);
+  const [dragging, setDragging] = useState<{
+    primaryId: string;
+    startCx: number; startCy: number;
+    initialPositions: Map<string, { x: number; y: number }>;
+  } | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panStart, setPanStart] = useState<{ mx: number; my: number; px: number; py: number } | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -521,8 +525,13 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
       }
       const drag = draggingRef.current;
       if (drag) {
-        const p = getCanvasPos(e.clientX, e.clientY);
-        setNodes(prev => prev.map(n => n.id === drag.id ? { ...n, x: p.x - drag.ox, y: p.y - drag.oy } : n));
+        const cp = getCanvasPos(e.clientX, e.clientY);
+        const dx = cp.x - drag.startCx;
+        const dy = cp.y - drag.startCy;
+        setNodes(prev => prev.map(n => {
+          const init = drag.initialPositions.get(n.id);
+          return init ? { ...n, x: init.x + dx, y: init.y + dy } : n;
+        }));
         return;
       }
       const res = resizingRef.current;
@@ -599,11 +608,18 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, readOnly = 
       });
       return;
     }
+    // ドラッグ対象が選択外なら単独選択に切り替え
     if (!selectedIds.has(nodeId)) setSelectedIds(new Set([nodeId]));
-    const node = nodes.find(n => n.id === nodeId)!;
-    const p = toCanvas(e.clientX, e.clientY);
+
+    const cp = toCanvas(e.clientX, e.clientY);
     pushUndo();
-    setDragging({ id: nodeId, ox: p.x - node.x, oy: p.y - node.y });
+
+    // ドラッグ開始時点の全選択ノード座標を記録（複数まとめ移動用）
+    const dragIds = selectedIds.has(nodeId) ? [...selectedIds] : [nodeId];
+    const initialPositions = new Map(
+      nodes.filter(n => dragIds.includes(n.id)).map(n => [n.id, { x: n.x, y: n.y }])
+    );
+    setDragging({ primaryId: nodeId, startCx: cp.x, startCy: cp.y, initialPositions });
   };
 
   const onBgMouseDown = (e: React.MouseEvent) => {
