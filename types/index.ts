@@ -17,6 +17,44 @@ export interface MindMapNode {
   textColor?: string;
   imageWidth?: number;
   imageHeight?: number;
+  lineMessage?: LineMessageData;
+}
+
+// ── LINE モード ──────────────────────────────────────
+export interface LineButton {
+  label: string;
+  url?: string;
+}
+
+export interface LineCarouselCard {
+  imageUrl?: string;
+  title?: string;
+  text?: string;
+  buttons?: LineButton[];
+}
+
+export interface LineMessageData {
+  type: "text" | "button" | "carousel";
+  // テキスト
+  text?: string;
+  // ボタン（リッチメッセージ）
+  buttonImageUrl?: string;
+  buttonTitle?: string;
+  buttonText?: string;
+  buttons?: LineButton[];
+  // カルーセル
+  cards?: LineCarouselCard[];
+}
+// ──────────────────────────────────────────────────────
+
+export interface StickyNote {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  width: number;
+  height: number;
 }
 
 export interface HistoryEntry {
@@ -36,4 +74,6 @@ export interface MindMap {
   tags?: string[];
   isPublic?: boolean;
   edgeStyle?: "curve" | "straight";
+  stickyNotes?: StickyNote[];
+  mode?: "mindmap" | "line";
 }

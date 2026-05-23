@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
-import { MindMap } from "@/types";
+import { MindMap, MindMapNode } from "@/types";
 import { APP_VERSION } from "@/lib/version";
 
 export default function MapsPage() {
@@ -13,6 +13,7 @@ export default function MapsPage() {
   const router = useRouter();
   const [maps, setMaps] = useState<MindMap[]>([]);
   const [creating, setCreating] = useState(false);
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -53,18 +54,35 @@ export default function MapsPage() {
     });
   }, [maps, selectedFolder, selectedTag, searchQuery]);
 
-  const createMap = async () => {
+  const LINE_TEMPLATE_NODES: MindMapNode[] = [
+    { id: "root",  text: "LINEシナリオ設計", x: 0,   y: 0,    parentId: null,  color: "#06C755" },
+    { id: "n1",    text: "友達追加時",        x: 240,  y: -140, parentId: "root", color: "#05b34c" },
+    { id: "n1-1",  text: "ウェルカムメッセージ", x: 520, y: -200, parentId: "n1",  color: "#0891b2" },
+    { id: "n1-2",  text: "初回アンケート",    x: 520,  y: -100, parentId: "n1",  color: "#0891b2" },
+    { id: "n2",    text: "ステップ配信",      x: 240,  y: 0,    parentId: "root", color: "#05b34c" },
+    { id: "n2-1",  text: "1日後 配信",       x: 520,  y: -30,  parentId: "n2",  color: "#6366f1" },
+    { id: "n2-2",  text: "3日後 配信",       x: 520,  y: 60,   parentId: "n2",  color: "#6366f1" },
+    { id: "n3",    text: "キーワード応答",    x: 240,  y: 140,  parentId: "root", color: "#05b34c" },
+    { id: "n3-1",  text: "「詳細」と返信",   x: 520,  y: 140,  parentId: "n3",  color: "#f59e0b" },
+  ];
+
+  const createMap = async (template: "blank" | "line") => {
     if (!user || creating) return;
     setCreating(true);
+    setShowTemplateDialog(false);
     const now = Date.now();
+    const isLine = template === "line";
     const ref = await addDoc(collection(db, "maps"), {
-      title: "新しいマップ",
-      nodes: [{ id: "root", text: "中心テーマ", x: 0, y: 0, parentId: null, color: "#6366f1" }],
+      title: isLine ? "LINEシナリオ設計" : "新しいマップ",
+      nodes: isLine
+        ? LINE_TEMPLATE_NODES
+        : [{ id: "root", text: "中心テーマ", x: 0, y: 0, parentId: null, color: "#6366f1" }],
       ownerId: user.uid,
       createdAt: now,
       updatedAt: now,
       folder: selectedFolder ?? null,
-      tags: [],
+      tags: isLine ? ["LINE"] : [],
+      mode: isLine ? "line" : "mindmap",
     });
     setCreating(false);
     router.push(`/maps/${ref.id}`);
@@ -166,7 +184,7 @@ export default function MapsPage() {
               {searchQuery && <span className="text-base font-normal text-gray-400 ml-2">「{searchQuery}」の検索結果</span>}
             </h2>
             <button
-              onClick={createMap}
+              onClick={() => setShowTemplateDialog(true)}
               disabled={creating}
               className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm font-medium disabled:opacity-50"
             >
@@ -198,9 +216,10 @@ export default function MapsPage() {
                       ×
                     </button>
                   </div>
-                  <p className="text-xs text-gray-400 mb-3">
-                    {new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード
-                    {map.isPublic && <span className="ml-2 text-green-500">● 公開中</span>}
+                  <p className="text-xs text-gray-400 mb-3 flex items-center gap-2 flex-wrap">
+                    <span>{new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード</span>
+                    {map.isPublic && <span className="text-green-500">● 公開中</span>}
+                    {map.mode === "line" && <span className="bg-[#06C755] text-white px-1.5 py-0.5 rounded text-[10px] font-semibold">LINE</span>}
                   </p>
 
                   <div className="flex flex-wrap gap-1 mb-2" onClick={e => e.stopPropagation()}>
@@ -269,6 +288,45 @@ export default function MapsPage() {
           )}
         </main>
       </div>
+      {/* テンプレート選択ダイアログ */}
+      {showTemplateDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
+          onClick={() => setShowTemplateDialog(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl p-6 w-[420px]"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">テンプレートを選択</h3>
+            <p className="text-xs text-gray-400 mb-5">作成後にモードを変更することはできません</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => createMap("blank")}
+                className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 transition-colors text-left"
+              >
+                <span className="text-4xl">🗺️</span>
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">空白マップ</p>
+                  <p className="text-xs text-gray-400 mt-0.5">自由に使えるマインドマップ</p>
+                </div>
+              </button>
+              <button
+                onClick={() => createMap("line")}
+                className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 border-gray-200 hover:border-[#06C755] hover:bg-green-50 transition-colors text-left"
+              >
+                <span className="text-4xl">📱</span>
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">LINE構築設計</p>
+                  <p className="text-xs text-gray-400 mt-0.5">シナリオ設計＋配信プレビュー</p>
+                </div>
+              </button>
+            </div>
+            <button onClick={() => setShowTemplateDialog(false)} className="mt-4 w-full py-2 text-sm text-gray-400 hover:text-gray-600">キャンセル</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,8 +5,10 @@ import { useRouter, useParams } from "next/navigation";
 import { doc, onSnapshot, updateDoc, addDoc, collection, query, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
-import { MindMap, MindMapNode, HistoryEntry } from "@/types";
+import { MindMap, MindMapNode, StickyNote, LineMessageData, HistoryEntry } from "@/types";
 import MindMapCanvas from "@/components/MindMapCanvas";
+import LineMessagePanel from "@/components/LineMessagePanel";
+import LinePreviewModal from "@/components/LinePreviewModal";
 
 function groupByDate(entries: HistoryEntry[]) {
   const groups: { date: string; entries: HistoryEntry[] }[] = [];
@@ -31,6 +33,8 @@ export default function MapEditorPage() {
   const [edgeStyle, setEdgeStyle] = useState<"curve" | "straight">("curve");
   const [showShareUrl, setShowShareUrl] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [previewMessage, setPreviewMessage] = useState<{ msg: LineMessageData; name: string } | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyMenuId, setHistoryMenuId] = useState<string | null>(null);
   const [historyPreview, setHistoryPreview] = useState<HistoryEntry | null>(null); // ④
@@ -74,6 +78,13 @@ export default function MapEditorPage() {
         lastHistorySave.current = now;
         await addDoc(collection(db, "maps", id, "history"), { nodes, savedAt: now });
       }
+    }, 800);
+  }, [id]);
+
+  const saveStickyNotes = useCallback((stickyNotes: StickyNote[]) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      await updateDoc(doc(db, "maps", id), { stickyNotes, updatedAt: Date.now() });
     }, 800);
   }, [id]);
 
@@ -190,9 +201,35 @@ export default function MapEditorPage() {
           )}
           {historyPreview
             ? <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly edgeStyle={edgeStyle} />
-            : <MindMapCanvas initialNodes={map.nodes} onNodesChange={saveNodes} exportRef={exportRef} edgeStyle={edgeStyle} />
+            : <MindMapCanvas
+                initialNodes={map.nodes}
+                onNodesChange={saveNodes}
+                initialStickyNotes={map.stickyNotes}
+                onStickyNotesChange={saveStickyNotes}
+                onSelectionChange={setSelectedNodeId}
+                mode={map.mode ?? "mindmap"}
+                exportRef={exportRef}
+                edgeStyle={edgeStyle}
+              />
           }
         </div>
+
+        {/* LINE メッセージパネル（LINEモード時は常時表示） */}
+        {map.mode === "line" && !showHistory && !historyPreview && (
+          <div className="w-72 bg-white border-l border-gray-100 flex flex-col overflow-hidden shrink-0">
+            <LineMessagePanel
+              node={selectedNodeId ? (map.nodes.find(n => n.id === selectedNodeId) ?? null) : null}
+              onUpdate={updates => {
+                const updated = map.nodes.map(n => n.id === selectedNodeId ? { ...n, ...updates } : n);
+                saveNodes(updated);
+              }}
+              onPreview={(msg) => {
+                const node = map.nodes.find(n => n.id === selectedNodeId);
+                setPreviewMessage({ msg, name: node?.text ?? "配信プレビュー" });
+              }}
+            />
+          </div>
+        )}
 
         {showHistory && (
           <div className="w-64 bg-white border-l border-gray-100 flex flex-col overflow-hidden shrink-0">
@@ -243,6 +280,15 @@ export default function MapEditorPage() {
           </div>
         )}
       </div>
+
+      {/* LINE プレビューモーダル */}
+      {previewMessage && (
+        <LinePreviewModal
+          message={previewMessage.msg}
+          nodeName={previewMessage.name}
+          onClose={() => setPreviewMessage(null)}
+        />
+      )}
     </div>
   );
 }
