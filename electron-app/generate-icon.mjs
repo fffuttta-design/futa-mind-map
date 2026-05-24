@@ -45,6 +45,14 @@ const svg = `
 
 mkdirSync(join(__dirname, "build"), { recursive: true });
 
+// build-info.json（asar に焼き込む）
+const builtAt = new Date().toISOString();
+writeFileSync(
+  join(__dirname, "build-info.json"),
+  JSON.stringify({ builtAt }, null, 2)
+);
+console.log(`✅ build-info.json generated: ${builtAt}`);
+
 const pngPath = join(__dirname, "build", "icon.png");
 const icoPath = join(__dirname, "build", "icon.ico");
 
