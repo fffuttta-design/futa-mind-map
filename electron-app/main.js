@@ -32,21 +32,32 @@ function createWindow() {
   // 自動アップデート（起動5秒後にチェック）
   if (app.isPackaged) setTimeout(() => checkForUpdates(win), 5000);
 
-  // 外部リンク（Google Auth など）はブラウザで開く
+  // ポップアップ・ナビゲーションのハンドリング
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(APP_URL)) {
+    // Firebase / Google OAuth のポップアップは Electron 内で開く（signInWithPopup に必要）
+    if (
+      url.startsWith(APP_URL) ||
+      url.includes("accounts.google.com") ||
+      url.includes("firebaseapp.com/__/auth")
+    ) {
       return { action: "allow" };
     }
+    // それ以外の外部リンクはブラウザで開く
     shell.openExternal(url);
     return { action: "deny" };
   });
 
-  // ページ内リンクも同様
+  // ページ内ナビゲーション（リダイレクトなど）
   win.webContents.on("will-navigate", (event, url) => {
-    if (!url.startsWith(APP_URL)) {
-      event.preventDefault();
-      shell.openExternal(url);
-    }
+    // Firebase auth ハンドラー・アプリ内遷移は許可
+    if (
+      url.startsWith(APP_URL) ||
+      url.includes("accounts.google.com") ||
+      url.includes("firebaseapp.com/__/auth")
+    ) return;
+    // それ以外はブラウザへ
+    event.preventDefault();
+    shell.openExternal(url);
   });
 
   // シンプルなメニュー（macOS 対応も含む）
