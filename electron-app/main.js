@@ -1,7 +1,40 @@
-const { app, BrowserWindow, shell, Menu } = require("electron");
+const { app, BrowserWindow, shell, Menu, dialog, ipcMain } = require("electron");
 const path = require("path");
+const { autoUpdater } = require("electron-updater");
 
 const APP_URL = "https://futa-mind-map.vercel.app";
+
+// ── 自動アップデート設定 ───────────────────────────────────────
+autoUpdater.autoDownload = true;          // 更新を自動ダウンロード
+autoUpdater.autoInstallOnAppQuit = true;  // 終了時に自動インストール
+
+function setupAutoUpdater(win) {
+  // 更新チェック開始（起動5秒後）
+  setTimeout(() => autoUpdater.checkForUpdates(), 5000);
+
+  autoUpdater.on("update-available", (info) => {
+    win.webContents.send("update-status", `新しいバージョン v${info.version} をダウンロード中...`);
+  });
+
+  autoUpdater.on("update-downloaded", () => {
+    dialog.showMessageBox(win, {
+      type: "info",
+      title: "アップデート完了",
+      message: "FutaMindMap の新しいバージョンが準備できました。",
+      detail: "今すぐ再起動してアップデートを適用しますか？",
+      buttons: ["今すぐ再起動", "後で"],
+      defaultId: 0,
+    }).then(({ response }) => {
+      if (response === 0) autoUpdater.quitAndInstall();
+    });
+  });
+
+  autoUpdater.on("error", (err) => {
+    // 開発環境やオフライン時はエラーを静かに無視
+    console.log("Auto-updater error:", err.message);
+  });
+}
+// ──────────────────────────────────────────────────────────────
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -27,6 +60,9 @@ function createWindow() {
   });
 
   win.loadURL(APP_URL);
+
+  // 自動アップデート設定
+  if (app.isPackaged) setupAutoUpdater(win);
 
   // 外部リンク（Google Auth など）はブラウザで開く
   win.webContents.setWindowOpenHandler(({ url }) => {

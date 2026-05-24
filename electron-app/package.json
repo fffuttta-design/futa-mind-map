@@ -7,7 +7,8 @@
     "start": "electron .",
     "icon": "node generate-icon.mjs",
     "build": "npm run icon && electron-builder --win",
-    "build:dir": "npm run icon && electron-builder --win --dir"
+    "build:dir": "npm run icon && electron-builder --win --dir",
+    "publish": "npm run icon && electron-builder --win --publish always"
   },
   "build": {
     "appId": "com.futamindmap.desktop",
@@ -25,7 +26,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico"
@@ -37,11 +40,19 @@
       "createStartMenuShortcut": true,
       "shortcutName": "FutaMindMap",
       "installerLanguages": ["ja"]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "fffuttta-design",
+      "repo": "futa-mind-map"
     }
   },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
     "png-to-ico": "^2.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
   }
 }
