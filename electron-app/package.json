@@ -1,0 +1,47 @@
+{
+  "name": "futa-mind-map-desktop",
+  "version": "1.0.24",
+  "description": "FutaMindMap Windows Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "node generate-icon.mjs",
+    "build": "npm run icon && electron-builder --win",
+    "build:dir": "npm run icon && electron-builder --win --dir"
+  },
+  "build": {
+    "appId": "com.futamindmap.desktop",
+    "productName": "FutaMindMap",
+    "copyright": "Copyright © 2025 FutaMindMap",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "build/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FutaMindMap",
+      "installerLanguages": ["ja"]
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "png-to-ico": "^2.1.8"
+  }
+}
