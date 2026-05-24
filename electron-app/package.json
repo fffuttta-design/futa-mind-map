@@ -20,6 +20,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "updater.js",
       "build/**"
     ],
     "win": {
@@ -39,20 +40,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "FutaMindMap",
-      "installerLanguages": ["ja"]
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "fffuttta-design",
-      "repo": "futa-mind-map"
+      "installerLanguages": [
+        "ja"
+      ]
     }
   },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
     "png-to-ico": "^2.1.8"
-  },
-  "dependencies": {
-    "electron-updater": "^6.8.3"
   }
 }
