@@ -34,10 +34,8 @@ const CTX_SHAPES = [
   { id: "diamond", l: "◇" }, { id: "text", l: "T" },
 ] as const;
 const CTX_SIZES = [11, 13, 15, 17] as const;
-const PRIORITY_COLOR_LIST = ["#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899","#64748b"];
-function priorityColor(p: number): string {
-  return PRIORITY_COLOR_LIST[Math.min(p - 1, PRIORITY_COLOR_LIST.length - 1)];
-}
+const PRIORITY_COLOR = "#ef4444";
+function priorityColor(_p: number): string { return PRIORITY_COLOR; }
 const STICKY_COLORS = ["#fef08a", "#fda4af", "#86efac", "#93c5fd", "#d8b4fe", "#fed7aa"] as const;
 const STICKY_DEFAULT_W = 160;
 const STICKY_DEFAULT_H = 120;
@@ -1504,14 +1502,30 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               <p className="text-xs text-gray-400 mb-1">優先度</p>
               <div className="flex gap-1 items-center">
                 <button
-                  onClick={() => applyFormat({ priority: Math.max(1, (ctxNode.priority ?? 1) - 1) === 0 ? undefined : Math.max(1, (ctxNode.priority ?? 2) - 1) })}
+                  onClick={() => {
+                    const next = (ctxNode.priority ?? 2) - 1;
+                    applyFormat({ priority: next < 1 ? undefined : next });
+                  }}
                   disabled={!ctxNode.priority}
                   className="w-7 h-7 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-30 flex items-center justify-center"
                 >−</button>
-                <div
-                  className="w-8 h-7 rounded-lg text-xs font-bold flex items-center justify-center text-white"
-                  style={{ backgroundColor: ctxNode.priority ? priorityColor(ctxNode.priority) : "#e5e7eb", color: ctxNode.priority ? "white" : "#9ca3af" }}
-                >{ctxNode.priority ?? "−"}</div>
+                <input
+                  type="number"
+                  min={1}
+                  value={ctxNode.priority ?? ""}
+                  onChange={e => {
+                    const v = parseInt(e.target.value, 10);
+                    if (e.target.value === "") applyFormat({ priority: undefined });
+                    else if (!isNaN(v) && v >= 1) applyFormat({ priority: v });
+                  }}
+                  onMouseDown={e => e.stopPropagation()}
+                  placeholder="−"
+                  className="w-10 h-7 rounded-lg text-xs font-bold text-center border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  style={{
+                    backgroundColor: ctxNode.priority ? PRIORITY_COLOR : "#e5e7eb",
+                    color: ctxNode.priority ? "white" : "#9ca3af",
+                  }}
+                />
                 <button
                   onClick={() => applyFormat({ priority: (ctxNode.priority ?? 0) + 1 })}
                   className="w-7 h-7 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 flex items-center justify-center"
