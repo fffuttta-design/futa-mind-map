@@ -184,6 +184,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const svgRef = useRef<SVGSVGElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickyInputRef = useRef<HTMLTextAreaElement>(null);
+  const cancelEditRef = useRef(false);
+  const copiedNodeRef = useRef<MindMapNode | null>(null);
 
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null;
 
@@ -381,6 +383,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   const commitEdit = useCallback(() => {
     if (!editingId) return;
+    if (cancelEditRef.current) { cancelEditRef.current = false; setEditingId(null); return; }
     updateNodes(nodes.map(n => n.id === editingId ? { ...n, text: editText.trim() || n.text } : n));
     setEditingId(null);
   }, [editingId, editText, nodes, updateNodes]);
@@ -586,8 +589,29 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   useEffect(() => {
     if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && (e.key === "z" || e.key === "Z")) { e.preventDefault(); undo(); return; }
+      if (e.ctrlKey && (e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        if (editingIdRef.current) { cancelEditRef.current = true; setEditingId(null); }
+        undo(); return;
+      }
       if (e.ctrlKey && (e.key === "y" || e.key === "Y")) { e.preventDefault(); redo(); return; }
+      if (e.ctrlKey && (e.key === "c" || e.key === "C")) {
+        if (editingIdRef.current) return;
+        const id = [...selectedIds][0];
+        const n = id ? nodesRef.current.find(n => n.id === id) : null;
+        if (n) { copiedNodeRef.current = n; }
+        return;
+      }
+      if (e.ctrlKey && (e.key === "v" || e.key === "V")) {
+        if (editingIdRef.current) return;
+        const src = copiedNodeRef.current;
+        if (!src) return;
+        e.preventDefault();
+        const newNode: MindMapNode = { ...src, id: `node-${Date.now()}`, x: src.x + 40, y: src.y + 40, parentId: null };
+        updateNodes([...nodesRef.current, newNode]);
+        setSelectedIds(new Set([newNode.id]));
+        return;
+      }
       if (editingIdRef.current) { if (e.key === "Escape") setEditingId(null); return; }
       if (editingStickyId) { if (e.key === "Escape") setEditingStickyId(null); return; }
       if (selectedStickyId) {
