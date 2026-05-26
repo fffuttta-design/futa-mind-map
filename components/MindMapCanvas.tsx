@@ -904,6 +904,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                     {editingId !== node.id && (
                       <text
                         textAnchor="middle"
+                        dominantBaseline="central"
                         fill={node.shape === "text" ? (node.textColor ?? node.color) : (node.textColor ?? "white")}
                         fontSize={node.fontSize ?? 13}
                         fontWeight={node.fontBold ? "bold" : "500"}
@@ -911,10 +912,10 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                         style={{ pointerEvents: "none" }}
                       >
                         {textLines.map((line, i) => {
-                          const startY = -(textLines.length - 1) * LINE_H / 2;
+                          const totalH = (textLines.length - 1) * LINE_H;
                           const display = line.length > 20 ? line.slice(0, 20) + "…" : line;
                           return (
-                            <tspan key={i} x={node.icon ? 8 : 0} y={startY + i * LINE_H} dominantBaseline="middle">
+                            <tspan key={i} x={node.icon ? 8 : 0} dy={i === 0 ? -totalH / 2 : LINE_H}>
                               {display}
                             </tspan>
                           );
@@ -1091,7 +1092,14 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
           onChange={e => setEditText(e.target.value)}
           onBlur={commitEdit}
           onKeyDown={e => {
-            // 改修③: Ctrl+Enter または Shift+Enter → 改行
+            // Ctrl+A はこのテキストエリア内だけを全選択（アプリ全体の選択を防ぐ）
+            if (e.ctrlKey && (e.key === "a" || e.key === "A")) {
+              e.preventDefault();
+              e.stopPropagation();
+              (e.target as HTMLTextAreaElement).select();
+              return;
+            }
+            // Ctrl+Enter または Shift+Enter → 改行
             if (e.key === "Enter" && (e.ctrlKey || e.shiftKey)) { return; }
             if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); commitEdit(); }
             if (e.key === "Escape") { e.stopPropagation(); setEditingId(null); }

@@ -271,6 +271,15 @@ export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props)
             onChange={e => onUpdate({ ...node, note: e.target.value || undefined })}
             placeholder="メモを入力..."
             className="w-full h-28 text-xs border border-gray-200 rounded p-2 resize-none focus:outline-none focus:border-indigo-400"
+            onKeyDown={e => {
+              // キャンバスのショートカットに漏れないよう伝播を止める
+              e.stopPropagation();
+              // Ctrl+A はこのテキストエリア内だけを全選択する
+              if (e.ctrlKey && (e.key === "a" || e.key === "A")) {
+                e.preventDefault();
+                (e.target as HTMLTextAreaElement).select();
+              }
+            }}
           />
         </div>
       )}
