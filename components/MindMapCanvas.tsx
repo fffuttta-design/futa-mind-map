@@ -804,7 +804,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setNodeCtxMenu(null);
     setStickyCtxMenu(null);
     setSelectedStickyId(null);
-    if (e.shiftKey) {
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
       setSelectedIds(prev => {
         const s = new Set(prev);
         if (s.has(nodeId)) { s.delete(nodeId); } else { s.add(nodeId); }
