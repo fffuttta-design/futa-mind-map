@@ -10,7 +10,6 @@ const COLORS = [
   "#ffffff", "#000000",
 ];
 const TEXT_COLORS = ["#ffffff", "#1e293b", "#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899"];
-const ICONS = ["💡", "⭐", "🔥", "✅", "❌", "📌", "🎯", "💬", "🔗", "📝", "⚠️", "🚀", "💰", "🎨", "🔑", "📊", "🏆", "💎", "🌟", "🎵", "🌈", "🎪"];
 
 const SHAPES = [
   { id: "pill",    label: "⬭", title: "カプセル" },
@@ -27,7 +26,7 @@ interface Props {
   onUpdate: (node: MindMapNode) => void;
 }
 
-type Panel = "nodeColor" | "textColor" | "icon" | "link" | "note" | "media" | null;
+type Panel = "nodeColor" | "textColor" | "link" | "note" | "media" | null;
 
 export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props) {
   const [panel, setPanel] = useState<Panel>(null);
@@ -115,14 +114,6 @@ export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props)
 
         <div className="w-px h-5 bg-gray-200 mx-1" />
 
-        {/* アイコン */}
-        <button
-          title="アイコン"
-          onClick={() => togglePanel("icon")}
-          className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center hover:bg-gray-100 transition-colors
-            ${panel === "icon" ? "bg-indigo-100 text-indigo-600" : "text-gray-500"}`}
-        >{node.icon ?? "🙂"}</button>
-
         {/* 画像 */}
         <button
           title="画像"
@@ -185,26 +176,6 @@ export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props)
                 className="w-6 h-6 rounded-full border border-gray-200 hover:scale-110 transition-transform"
                 style={{ backgroundColor: c, outline: (node.textColor ?? "#ffffff") === c ? "2px solid #6366f1" : "none", outlineOffset: 1 }}
               />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ─── サブパネル（アイコン）─── */}
-      {panel === "icon" && (
-        <div className="mt-1.5 bg-white rounded-xl shadow-lg border border-gray-100 p-3"
-          onMouseDown={e => e.stopPropagation()}>
-          <div className="grid grid-cols-8 gap-1">
-            <button
-              onClick={() => onUpdate({ ...node, icon: undefined })}
-              className={`w-7 h-7 rounded border text-xs flex items-center justify-center ${!node.icon ? "border-indigo-400 bg-indigo-50" : "border-gray-200 hover:border-gray-300"}`}
-            >✕</button>
-            {ICONS.map(icon => (
-              <button
-                key={icon}
-                onClick={() => onUpdate({ ...node, icon })}
-                className={`w-7 h-7 rounded border text-sm flex items-center justify-center ${node.icon === icon ? "border-indigo-400 bg-indigo-50" : "border-gray-200 hover:border-gray-300"}`}
-              >{icon}</button>
             ))}
           </div>
         </div>

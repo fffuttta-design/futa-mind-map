@@ -1218,30 +1218,14 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                     {/* ヘッダー背景（角丸は上のみ） */}
                     <rect x={-w / 2} y={-h / 2} width={w} height={LIST_HEADER_H} rx={8} fill={node.color} />
                     <rect x={-w / 2} y={-h / 2 + LIST_HEADER_H - 8} width={w} height={8} fill={node.color} />
-                    {/* 折りたたみトグル */}
-                    <g
-                      transform={`translate(${-w / 2 + 16}, ${-h / 2 + LIST_HEADER_H / 2})`}
-                      onMouseDown={e => e.stopPropagation()}
-                      onClick={e => {
-                        e.stopPropagation();
-                        const upd = nodesRef.current.map(n => n.id === node.id ? { ...n, collapsed: !n.collapsed } : n);
-                        setNodes(upd); onNodesChangeRef.current(upd);
-                      }}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <circle r={8} fill="rgba(255,255,255,0.2)" />
-                      <text textAnchor="middle" dominantBaseline="central" fontSize={9} fill="white" style={{ pointerEvents: "none" }}>
-                        {node.collapsed ? "▶" : "▼"}
-                      </text>
-                    </g>
                     {/* タイトル（ダブルクリックで編集） */}
                     {editingId !== node.id && (
                       <text
-                        x={-w / 2 + 32} y={-h / 2 + LIST_HEADER_H / 2}
+                        x={-w / 2 + 10} y={-h / 2 + LIST_HEADER_H / 2}
                         dominantBaseline="central" fontSize={13} fontWeight="600" fill="white"
                         style={{ pointerEvents: "none" }}
                       >
-                        {node.text.length > 18 ? node.text.slice(0, 18) + "…" : node.text}
+                        {node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text}
                       </text>
                     )}
                     {/* 進捗 */}
@@ -1250,13 +1234,29 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                       const done = all.filter(f => f.item.checked).length;
                       return (
                         <text
-                          x={w / 2 - 10} y={-h / 2 + LIST_HEADER_H / 2}
+                          x={w / 2 - 32} y={-h / 2 + LIST_HEADER_H / 2}
                           textAnchor="end" dominantBaseline="central"
                           fontSize={11} fill="rgba(255,255,255,0.85)"
                           style={{ pointerEvents: "none" }}
                         >{done}/{all.length}</text>
                       );
                     })()}
+                    {/* 折りたたみトグル（右端） */}
+                    <g
+                      transform={`translate(${w / 2 - 16}, ${-h / 2 + LIST_HEADER_H / 2})`}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => {
+                        e.stopPropagation();
+                        const upd = nodesRef.current.map(n => n.id === node.id ? { ...n, collapsed: !n.collapsed } : n);
+                        setNodes(upd); onNodesChangeRef.current(upd);
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <circle r={10} fill="rgba(255,255,255,0.2)" />
+                      <text textAnchor="middle" dominantBaseline="central" fontSize={9} fill="white" style={{ pointerEvents: "none" }}>
+                        {node.collapsed ? "▶" : "▼"}
+                      </text>
+                    </g>
                     {/* アイテム行（フラット化して深さを保持） */}
                     {!node.collapsed && (() => {
                       const lih = listItemH(node);
