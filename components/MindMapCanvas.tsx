@@ -1147,8 +1147,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                     <rect
                       x={-w / 2} y={-h / 2} width={w} height={h} rx={8}
                       fill="white"
-                      stroke={isSelected ? "#6366f1" : "#e2e8f0"}
-                      strokeWidth={isSelected ? 2 : 1}
+                      stroke={isSelected ? "#6366f1" : nodeBorderWidth > 0 ? "#000000" : "#e2e8f0"}
+                      strokeWidth={isSelected ? 2 : nodeBorderWidth > 0 ? nodeBorderWidth : 1}
                     />
                     {/* ヘッダー背景（角丸は上のみ） */}
                     <rect x={-w / 2} y={-h / 2} width={w} height={LIST_HEADER_H} rx={8} fill={node.color} />
