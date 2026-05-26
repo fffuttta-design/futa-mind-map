@@ -330,6 +330,33 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setTimeout(() => { setEditingId(newNode.id); setEditText(newNode.text); }, 50);
   }, [nodes, updateNodes]);
 
+  // 指定方向に子ノードを追加（ホバー時の方向別 "+" ボタン用）
+  const addChildInDirection = useCallback((parentId: string, dir: "right" | "left" | "top" | "bottom") => {
+    const parent = nodes.find(n => n.id === parentId);
+    if (!parent) return;
+    const existingInDir = nodes.filter(n => n.parentId === parentId).filter(c => {
+      const dx = c.x - parent.x, dy = c.y - parent.y;
+      if (dir === "right")  return Math.abs(dx) >= Math.abs(dy) && dx >= 0;
+      if (dir === "left")   return Math.abs(dx) >= Math.abs(dy) && dx < 0;
+      if (dir === "bottom") return Math.abs(dy) >  Math.abs(dx) && dy > 0;
+      /* top */              return Math.abs(dy) >  Math.abs(dx) && dy < 0;
+    });
+    const sib = existingInDir.length;
+    let nx: number, ny: number;
+    if (dir === "right")  { nx = parent.x + 240; ny = parent.y + sib * 70; }
+    else if (dir === "left")   { nx = parent.x - 240; ny = parent.y + sib * 70; }
+    else if (dir === "bottom") { nx = parent.x + sib * 100; ny = parent.y + 140; }
+    else                       { nx = parent.x + sib * 100; ny = parent.y - 140; }
+    const newNode: MindMapNode = {
+      id: `node-${Date.now()}`, text: "新しいノード",
+      x: nx, y: ny, parentId,
+      color: parent.color,
+    };
+    updateNodes([...nodes.map(n => n.id === parentId ? { ...n, collapsed: false } : n), newNode]);
+    setSelectedIds(new Set([newNode.id]));
+    setTimeout(() => { setEditingId(newNode.id); setEditText(newNode.text); }, 50);
+  }, [nodes, updateNodes]);
+
   const addSibling = useCallback((nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node || !node.parentId) { addChild(nodeId); return; }
@@ -961,30 +988,37 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                     {node.imageUrl && (
                       <image href={node.imageUrl} x={-w / 2} y={h / 2 + 4} width={w} height={40} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: "none" }} />
                     )}
-                    {!readOnly && (hoveredId === node.id || isSelected) && (
-                      <>
-                        <g
-                          transform={`translate(${w / 2 + 14}, 0)`}
-                          onMouseDown={e => e.stopPropagation()}
-                          onClick={e => { e.stopPropagation(); addChild(node.id); }}
-                          style={{ cursor: "pointer" }}
-                        >
-                          <circle r={10} fill="#6366f1" />
-                          <text textAnchor="middle" dominantBaseline="middle" fontSize={16} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>+</text>
-                        </g>
-                        {node.parentId && (
-                          <g
-                            transform={`translate(0, ${h / 2 + 16})`}
-                            onMouseDown={e => e.stopPropagation()}
-                            onClick={e => { e.stopPropagation(); addSibling(node.id); }}
-                            style={{ cursor: "pointer" }}
-                          >
-                            <circle r={10} fill="#6366f1" />
-                            <text textAnchor="middle" dominantBaseline="middle" fontSize={16} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>+</text>
-                          </g>
-                        )}
-                      </>
-                    )}
+                    {!readOnly && (hoveredId === node.id || isSelected) && (() => {
+                      // 各方向に既存の子があるか判定
+                      const nodeChildren = nodes.filter(n => n.parentId === node.id);
+                      const hasDirChild = {
+                        right:  nodeChildren.some(c => Math.abs(c.x - node.x) >= Math.abs(c.y - node.y) && c.x >= node.x),
+                        left:   nodeChildren.some(c => Math.abs(c.x - node.x) >= Math.abs(c.y - node.y) && c.x < node.x),
+                        bottom: nodeChildren.some(c => Math.abs(c.y - node.y) >  Math.abs(c.x - node.x) && c.y > node.y),
+                        top:    nodeChildren.some(c => Math.abs(c.y - node.y) >  Math.abs(c.x - node.x) && c.y < node.y),
+                      };
+                      const btnDirs = [
+                        { dir: "right"  as const, tx:  w / 2 + 14, ty: 0            },
+                        { dir: "left"   as const, tx: -w / 2 - 14, ty: 0            },
+                        { dir: "bottom" as const, tx: 0,            ty:  h / 2 + 14 },
+                        { dir: "top"    as const, tx: 0,            ty: -h / 2 - 14 },
+                      ];
+                      return (
+                        <>
+                          {btnDirs.filter(b => !hasDirChild[b.dir]).map(({ dir, tx, ty }) => (
+                            <g key={dir}
+                              transform={`translate(${tx}, ${ty})`}
+                              onMouseDown={e => e.stopPropagation()}
+                              onClick={e => { e.stopPropagation(); addChildInDirection(node.id, dir); }}
+                              style={{ cursor: "pointer" }}
+                            >
+                              <circle r={10} fill="#6366f1" />
+                              <text textAnchor="middle" dominantBaseline="middle" fontSize={16} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>+</text>
+                            </g>
+                          ))}
+                        </>
+                      );
+                    })()}
                     {/* ノードリサイズハンドル（選択時に四隅に表示） */}
                     {isSelected && !readOnly && !editingId && (
                       [["se", w / 2, h / 2], ["sw", -w / 2, h / 2], ["ne", w / 2, -h / 2], ["nw", -w / 2, -h / 2]] as ["se" | "sw" | "ne" | "nw", number, number][]
