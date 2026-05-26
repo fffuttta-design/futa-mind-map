@@ -10,6 +10,7 @@ import MindMapCanvas from "@/components/MindMapCanvas";
 import LineMessagePanel from "@/components/LineMessagePanel";
 import LinePreviewModal from "@/components/LinePreviewModal";
 import SettingsModal from "@/components/SettingsModal";
+import PageSettingsModal from "@/components/PageSettingsModal";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
 
 function groupByDate(entries: HistoryEntry[]) {
@@ -33,6 +34,9 @@ export default function MapEditorPage() {
   const [title, setTitle] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [edgeStyle, setEdgeStyle] = useState<"curve" | "straight">("curve");
+  const [defaultShape, setDefaultShape] = useState<"pill" | "rect" | "circle" | "diamond" | "text">("pill");
+  const [nodeBorderWidth, setNodeBorderWidth] = useState<number>(0);
+  const [showPageSettings, setShowPageSettings] = useState(false);
   const [showShareUrl, setShowShareUrl] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -59,6 +63,8 @@ export default function MapEditorPage() {
         setTitle(data.title);
         setIsPublic(data.isPublic ?? false);
         setEdgeStyle(data.edgeStyle ?? "curve");
+        setDefaultShape(data.defaultShape ?? "pill");
+        setNodeBorderWidth(data.nodeBorderWidth ?? 0);
       }
     });
     return unsub;
@@ -155,13 +161,9 @@ export default function MapEditorPage() {
             className="px-3 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
           >PNG</button>
           <button
-            onClick={async () => {
-              const next: "curve" | "straight" = edgeStyle === "curve" ? "straight" : "curve";
-              setEdgeStyle(next);
-              await updateDoc(doc(db, "maps", id), { edgeStyle: next });
-            }}
+            onClick={() => setShowPageSettings(true)}
             className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-          >{edgeStyle === "curve" ? "〜 曲線" : "━ 直線"}</button>
+          >🗺️ ページ設定</button>
           <button
             onClick={togglePublic}
             className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${isPublic ? "bg-green-100 text-green-600 hover:bg-green-200" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
@@ -214,6 +216,8 @@ export default function MapEditorPage() {
                 mode={map.mode ?? "mindmap"}
                 exportRef={exportRef}
                 edgeStyle={edgeStyle}
+                defaultShape={defaultShape}
+                nodeBorderWidth={nodeBorderWidth}
               />
           }
 
@@ -315,6 +319,28 @@ export default function MapEditorPage() {
           onClose={() => setShowSettings(false)}
           initialHasUpdate={hasUpdate}
           initialLatestVersion={latestVersion}
+        />
+      )}
+
+      {/* ページ設定モーダル */}
+      {showPageSettings && (
+        <PageSettingsModal
+          edgeStyle={edgeStyle}
+          defaultShape={defaultShape}
+          nodeBorderWidth={nodeBorderWidth}
+          onEdgeStyleChange={async (v) => {
+            setEdgeStyle(v);
+            await updateDoc(doc(db, "maps", id), { edgeStyle: v });
+          }}
+          onDefaultShapeChange={async (v) => {
+            setDefaultShape(v);
+            await updateDoc(doc(db, "maps", id), { defaultShape: v });
+          }}
+          onNodeBorderWidthChange={async (v) => {
+            setNodeBorderWidth(v);
+            await updateDoc(doc(db, "maps", id), { nodeBorderWidth: v });
+          }}
+          onClose={() => setShowPageSettings(false)}
         />
       )}
     </div>

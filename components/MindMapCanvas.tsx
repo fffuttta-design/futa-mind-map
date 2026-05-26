@@ -14,6 +14,8 @@ interface Props {
   readOnly?: boolean;
   exportRef?: React.MutableRefObject<{ exportSVG: () => void; exportPNG: () => void } | null>;
   edgeStyle?: "curve" | "straight";
+  defaultShape?: "pill" | "rect" | "circle" | "diamond" | "text";
+  nodeBorderWidth?: number;
 }
 
 const NODE_H = 34;
@@ -87,10 +89,10 @@ function makeEdgePath(x1: number, y1: number, x2: number, y2: number, v: boolean
   return `M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}`;
 }
 
-function NodeShape({ node, w, h, isSelected }: { node: MindMapNode; w: number; h: number; isSelected: boolean }) {
+function NodeShape({ node, w, h, isSelected, borderWidth = 0 }: { node: MindMapNode; w: number; h: number; isSelected: boolean; borderWidth?: number }) {
   const fill = node.color;
-  const stroke = isSelected ? "#1e293b" : "transparent";
-  const sw = 2.5;
+  const stroke = isSelected ? "#1e293b" : (borderWidth > 0 ? "#000000" : "transparent");
+  const sw = isSelected ? 2.5 : borderWidth;
   switch (node.shape ?? "pill") {
     case "rect":
       return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={4} fill={fill} stroke={stroke} strokeWidth={sw} />;
@@ -145,7 +147,7 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${nodeEls}\n</svg>`;
 }
 
-export default function MindMapCanvas({ initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve" }: Props) {
+export default function MindMapCanvas({ initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0 }: Props) {
   const [nodes, setNodes] = useState<MindMapNode[]>(initialNodes);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -335,6 +337,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       y: parent.y + siblings.length * 64 - Math.max(0, siblings.length - 1) * 32,
       parentId,
       color: parent.color,
+      shape: defaultShape !== "pill" ? defaultShape : undefined,
     };
     updateNodes([...nodes.map(n => n.id === parentId ? { ...n, collapsed: false } : n), newNode]);
     setSelectedIds(new Set([newNode.id]));
@@ -362,6 +365,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       id: `node-${Date.now()}`, text: "新しいノード",
       x: nx, y: ny, parentId,
       color: parent.color,
+      shape: defaultShape !== "pill" ? defaultShape : undefined,
     };
     updateNodes([...nodes.map(n => n.id === parentId ? { ...n, collapsed: false } : n), newNode]);
     setSelectedIds(new Set([newNode.id]));
@@ -375,6 +379,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       id: `node-${Date.now()}`, text: "新しいノード",
       x: node.x, y: node.y + 64,
       parentId: node.parentId, color: node.color,
+      shape: defaultShape !== "pill" ? defaultShape : undefined,
     };
     updateNodes([...nodes, newNode]);
     setSelectedIds(new Set([newNode.id]));
@@ -1024,7 +1029,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                   </>
                 ) : (
                   <>
-                    <NodeShape node={node} w={w} h={h} isSelected={isSelected} />
+                    <NodeShape node={node} w={w} h={h} isSelected={isSelected} borderWidth={nodeBorderWidth} />
                     {node.icon && (
                       <text x={-w / 2 + 16} textAnchor="middle" dominantBaseline="middle" fontSize={14} style={{ pointerEvents: "none" }}>{node.icon}</text>
                     )}

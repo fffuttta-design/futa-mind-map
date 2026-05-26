@@ -79,6 +79,8 @@ export interface MindMap {
   tags?: string[];
   isPublic?: boolean;
   edgeStyle?: "curve" | "straight";
+  defaultShape?: "pill" | "rect" | "circle" | "diamond" | "text";
+  nodeBorderWidth?: number;
   stickyNotes?: StickyNote[];
   mode?: "mindmap" | "line";
 }
