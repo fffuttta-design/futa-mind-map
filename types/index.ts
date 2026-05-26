@@ -73,6 +73,7 @@ export interface HistoryEntry {
   id: string;
   nodes: MindMapNode[];
   savedAt: number;
+  name?: string;
 }
 
 export interface MindMap {

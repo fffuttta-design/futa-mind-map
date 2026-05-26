@@ -43,7 +43,9 @@ export default function MapEditorPage() {
   const [previewMessage, setPreviewMessage] = useState<{ msg: LineMessageData; name: string } | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyMenuId, setHistoryMenuId] = useState<string | null>(null);
-  const [historyPreview, setHistoryPreview] = useState<HistoryEntry | null>(null); // ④
+  const [historyPreview, setHistoryPreview] = useState<HistoryEntry | null>(null);
+  const [showManualSave, setShowManualSave] = useState(false);
+  const [manualSaveName, setManualSaveName] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const { hasUpdate, latestVersion } = useVersionCheck();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -131,6 +133,18 @@ export default function MapEditorPage() {
     setHistoryMenuId(null);
     router.push("/maps");
   }, [title, user, router]);
+
+  const saveManualSnapshot = async () => {
+    if (!map) return;
+    const name = manualSaveName.trim() || undefined;
+    await addDoc(collection(db, "maps", id, "history"), {
+      nodes: map.nodes,
+      savedAt: Date.now(),
+      ...(name ? { name } : {}),
+    });
+    setManualSaveName("");
+    setShowManualSave(false);
+  };
 
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/share/${id}` : "";
 
@@ -258,8 +272,39 @@ export default function MapEditorPage() {
           <div className="w-64 bg-white border-l border-gray-100 flex flex-col overflow-hidden shrink-0">
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-700">バージョン履歴</h3>
-              <button onClick={() => setShowHistory(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setShowManualSave(v => !v); setManualSaveName(""); }}
+                  className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors font-medium"
+                >💾 保存</button>
+                <button onClick={() => setShowHistory(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+              </div>
             </div>
+            {/* 手動保存フォーム */}
+            {showManualSave && (
+              <div className="px-3 py-2.5 border-b border-gray-100 bg-indigo-50/50">
+                <p className="text-xs text-indigo-600 font-medium mb-1.5">この状態を保存</p>
+                <input
+                  type="text"
+                  value={manualSaveName}
+                  onChange={e => setManualSaveName(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") saveManualSnapshot(); if (e.key === "Escape") setShowManualSave(false); }}
+                  placeholder="保存名（省略可）"
+                  autoFocus
+                  className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-indigo-200 outline-none focus:border-indigo-400 bg-white mb-2"
+                />
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={saveManualSnapshot}
+                    className="flex-1 text-xs py-1.5 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors font-medium"
+                  >保存する</button>
+                  <button
+                    onClick={() => setShowManualSave(false)}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                  >キャンセル</button>
+                </div>
+              </div>
+            )}
             <div className="overflow-y-auto flex-1 p-3" onClick={() => setHistoryMenuId(null)}>
               {history.length === 0 && (
                 <p className="text-xs text-gray-400 text-center py-8">まだ履歴がありません<br />編集すると1分ごとに保存されます</p>
@@ -269,16 +314,25 @@ export default function MapEditorPage() {
                   <p className="text-xs text-gray-400 font-semibold mt-3 mb-1 px-1">{group.date}</p>
                   {group.entries.map(entry => (
                     <div key={entry.id} className="relative flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50 group">
-                      {/* ④ クリックでプレビュー */}
                       <button
                         onClick={e => { e.stopPropagation(); setHistoryPreview(entry); }}
-                        className="text-sm text-gray-700 hover:text-indigo-600 text-left flex-1 transition-colors"
+                        className="text-sm text-gray-700 hover:text-indigo-600 text-left flex-1 min-w-0 transition-colors"
                       >
-                        {new Date(entry.savedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                        <span className="block truncate">
+                          {entry.name
+                            ? <><span className="font-medium text-indigo-600">📌 {entry.name}</span></>
+                            : new Date(entry.savedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })
+                          }
+                        </span>
+                        {entry.name && (
+                          <span className="text-xs text-gray-400">
+                            {new Date(entry.savedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        )}
                       </button>
                       <button
                         onClick={e => { e.stopPropagation(); setHistoryMenuId(historyMenuId === entry.id ? null : entry.id); }}
-                        className="text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none px-1"
+                        className="text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none px-1 shrink-0"
                       >···</button>
                       {historyMenuId === entry.id && (
                         <div

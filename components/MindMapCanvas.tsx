@@ -726,6 +726,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   useEffect(() => {
     if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
+      // INPUT要素（リストアイテム編集など）ではグローバルショートカットを無効化
+      if ((e.target as HTMLElement).tagName === "INPUT") return;
       if (e.ctrlKey && (e.key === "z" || e.key === "Z")) {
         e.preventDefault();
         if (editingIdRef.current) { cancelEditRef.current = true; setEditingId(null); }
