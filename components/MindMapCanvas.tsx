@@ -172,6 +172,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   // 相談: ラバーバンド（範囲選択）
   const [rubberBand, setRubberBand] = useState<{ sx: number; sy: number; ex: number; ey: number } | null>(null);
 
+  // スマートガイド
+  const [guides, setGuides] = useState<{ type: "h" | "v"; pos: number; from: number; to: number }[]>([]);
+
   // 付箋
   const [stickyNotes, setStickyNotes] = useState<StickyNote[]>(initialStickyNotes ?? []);
   const [selectedStickyId, setSelectedStickyId] = useState<string | null>(null);
@@ -706,8 +709,36 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       const drag = draggingRef.current;
       if (drag) {
         const cp = getCanvasPos(e.clientX, e.clientY);
-        const dx = cp.x - drag.startCx;
-        const dy = cp.y - drag.startCy;
+        let dx = cp.x - drag.startCx;
+        let dy = cp.y - drag.startCy;
+        const dragIds = new Set(drag.initialPositions.keys());
+        const otherNodes = nodesRef.current.filter(n => !dragIds.has(n.id));
+        const SNAP = 8;
+        const GUIDE_PAD = 40;
+        const newGuides: { type: "h" | "v"; pos: number; from: number; to: number }[] = [];
+        // 単ノードドラッグ時のみスナップ＋ガイド計算
+        if (drag.initialPositions.size === 1) {
+          const [, initPos] = [...drag.initialPositions.entries()][0];
+          const nx = initPos.x + dx;
+          const ny = initPos.y + dy;
+          for (const other of otherNodes) {
+            // 水平ガイド（Y中心が揃う）
+            if (Math.abs(ny - other.y) < SNAP) {
+              dy = other.y - initPos.y;
+              const fx = Math.min(nx, other.x) - GUIDE_PAD;
+              const tx = Math.max(nx, other.x) + GUIDE_PAD;
+              newGuides.push({ type: "h", pos: other.y, from: fx, to: tx });
+            }
+            // 垂直ガイド（X中心が揃う）
+            if (Math.abs(nx - other.x) < SNAP) {
+              dx = other.x - initPos.x;
+              const fy = Math.min(ny, other.y) - GUIDE_PAD;
+              const ty = Math.max(ny, other.y) + GUIDE_PAD;
+              newGuides.push({ type: "v", pos: other.x, from: fy, to: ty });
+            }
+          }
+        }
+        setGuides(newGuides);
         setNodes(prev => prev.map(n => {
           const init = drag.initialPositions.get(n.id);
           return init ? { ...n, x: init.x + dx, y: init.y + dy } : n;
@@ -766,6 +797,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         onNodesChangeRef.current(nodesRef.current);
         setDragging(null);
         setResizing(null);
+        setGuides([]);
       }
     };
     window.addEventListener("mousemove", onMove);
@@ -1164,6 +1196,21 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               </g>
             );
           })}
+
+          {/* スマートガイドライン */}
+          {guides.map((g, i) => (
+            <line
+              key={i}
+              x1={g.type === "h" ? g.from : g.pos}
+              y1={g.type === "h" ? g.pos : g.from}
+              x2={g.type === "h" ? g.to : g.pos}
+              y2={g.type === "h" ? g.pos : g.to}
+              stroke="#f43f5e"
+              strokeWidth={1 / zoom}
+              strokeDasharray={`${6 / zoom} ${3 / zoom}`}
+              style={{ pointerEvents: "none" }}
+            />
+          ))}
 
           {/* 相談: ラバーバンド選択矩形 */}
           {rubberBand && (
