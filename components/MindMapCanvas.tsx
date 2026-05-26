@@ -1036,7 +1036,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                           const totalH = (textLines.length - 1) * LINE_H;
                           const display = line.length > 20 ? line.slice(0, 20) + "…" : line;
                           return (
-                            <tspan key={i} x={node.isCheckbox ? 12 : (node.icon ? 8 : 0)} dy={i === 0 ? -totalH / 2 : LINE_H}>
+                            <tspan key={i} x={node.isCheckbox ? 16 : (node.icon ? 8 : 0)} dy={i === 0 ? -totalH / 2 : LINE_H}>
                               {display}
                             </tspan>
                           );
@@ -1112,19 +1112,19 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                     {/* チェックボックス（isCheckbox=true のノードのテキスト左に表示） */}
                     {node.isCheckbox && (
                       <g
-                        transform={`translate(${-w / 2 + 14}, 0)`}
+                        transform={`translate(${-w / 2 + 22}, 0)`}
                         onMouseDown={e => e.stopPropagation()}
                         onClick={e => { e.stopPropagation(); toggleNodeChecked(node.id); }}
                         style={{ cursor: "pointer" }}
                       >
-                        <rect x={-7} y={-7} width={14} height={14} rx={3}
+                        <rect x={-9} y={-9} width={18} height={18} rx={4}
                           fill={node.checked ? "#10b981" : "rgba(255,255,255,0.2)"}
                           stroke={node.checked ? "#10b981" : "rgba(255,255,255,0.8)"}
                           strokeWidth={1.5}
                         />
                         {node.checked && (
                           <text x={0} y={0} textAnchor="middle" dominantBaseline="central"
-                            fontSize={10} fill="white" fontWeight="bold"
+                            fontSize={13} fill="white" fontWeight="bold"
                             style={{ pointerEvents: "none" }}>✓</text>
                         )}
                       </g>
