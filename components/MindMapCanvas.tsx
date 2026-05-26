@@ -684,6 +684,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       if (n.id !== nodeId) return n;
       return {
         ...n,
+        // customWidth/Height をリセットして LIST_MIN_W の自動サイズを有効にする
+        customWidth: undefined,
+        customHeight: undefined,
         listItems: [{ id: `li-${Date.now()}`, text: n.text, checked: false }],
       };
     });
