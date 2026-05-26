@@ -1016,7 +1016,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                           const totalH = (textLines.length - 1) * LINE_H;
                           const display = line.length > 20 ? line.slice(0, 20) + "…" : line;
                           return (
-                            <tspan key={i} x={node.isCheckbox ? 16 : (node.icon ? 8 : 0)} dy={i === 0 ? -totalH / 2 : LINE_H}>
+                            <tspan key={i} x={node.isCheckbox ? 22 : (node.icon ? 8 : 0)} dy={i === 0 ? -totalH / 2 : LINE_H}>
                               {display}
                             </tspan>
                           );
@@ -1092,7 +1092,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                     {/* チェックボックス（isCheckbox=true のノードのテキスト左に表示） */}
                     {node.isCheckbox && (
                       <g
-                        transform={`translate(${-w / 2 + 22}, 0)`}
+                        transform={`translate(${-w / 2 + 28}, 0)`}
                         onMouseDown={e => e.stopPropagation()}
                         onClick={e => { e.stopPropagation(); toggleNodeChecked(node.id); }}
                         style={{ cursor: "pointer" }}
