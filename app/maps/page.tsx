@@ -7,6 +7,8 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { MindMap, MindMapNode } from "@/types";
 import { APP_VERSION } from "@/lib/version";
+import SettingsModal from "@/components/SettingsModal";
+import { useVersionCheck } from "@/hooks/useVersionCheck";
 
 export default function MapsPage() {
   const { user, loading, signOut } = useAuth();
@@ -21,6 +23,8 @@ export default function MapsPage() {
   const [editingTagsFor, setEditingTagsFor] = useState<string | null>(null);
   const [newFolder, setNewFolder] = useState("");
   const [newTag, setNewTag] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const { hasUpdate, latestVersion } = useVersionCheck();
 
   useEffect(() => {
     if (!loading && !user) router.push("/");
@@ -288,6 +292,21 @@ export default function MapsPage() {
           )}
         </main>
       </div>
+      {/* 全体設定ボタン（左下固定） */}
+      <button
+        onClick={() => setShowSettings(true)}
+        title="アプリ設定"
+        className="fixed bottom-5 left-5 w-9 h-9 rounded-full bg-white hover:bg-gray-50 border border-gray-200 shadow-md flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all z-40 relative"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        {hasUpdate && (
+          <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-400 rounded-full border-2 border-white" />
+        )}
+      </button>
+
       {/* テンプレート選択ダイアログ */}
       {showTemplateDialog && (
         <div
@@ -326,6 +345,15 @@ export default function MapsPage() {
             <button onClick={() => setShowTemplateDialog(false)} className="mt-4 w-full py-2 text-sm text-gray-400 hover:text-gray-600">キャンセル</button>
           </div>
         </div>
+      )}
+
+      {/* 全体設定モーダル */}
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          initialHasUpdate={hasUpdate}
+          initialLatestVersion={latestVersion}
+        />
       )}
     </div>
   );

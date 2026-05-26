@@ -5,13 +5,18 @@ import { APP_VERSION } from "@/lib/version";
 
 interface Props {
   onClose: () => void;
+  /** 起動時の自動チェック結果を渡す（バッジ→モーダル連携用） */
+  initialLatestVersion?: string | null;
+  initialHasUpdate?: boolean;
 }
 
 type CheckState = "idle" | "checking" | "latest" | "update-available";
 
-export default function SettingsModal({ onClose }: Props) {
-  const [checkState, setCheckState] = useState<CheckState>("idle");
-  const [latestVersion, setLatestVersion] = useState<string | null>(null);
+export default function SettingsModal({ onClose, initialLatestVersion, initialHasUpdate }: Props) {
+  const [checkState, setCheckState] = useState<CheckState>(
+    initialHasUpdate ? "update-available" : "idle"
+  );
+  const [latestVersion, setLatestVersion] = useState<string | null>(initialLatestVersion ?? null);
 
   const handleCheckVersion = async () => {
     setCheckState("checking");
@@ -19,11 +24,7 @@ export default function SettingsModal({ onClose }: Props) {
       const res = await fetch("/api/version", { cache: "no-store" });
       const data = await res.json();
       setLatestVersion(data.version);
-      if (data.version !== APP_VERSION) {
-        setCheckState("update-available");
-      } else {
-        setCheckState("latest");
-      }
+      setCheckState(data.version !== APP_VERSION ? "update-available" : "latest");
     } catch {
       setCheckState("idle");
     }
@@ -56,8 +57,8 @@ export default function SettingsModal({ onClose }: Props) {
         {/* バージョン */}
         <div className="px-6 py-5">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">バージョン情報</p>
-          <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
-            <div>
+          <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between gap-3">
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-800">FutaMindMap</p>
               <p className="text-xs text-gray-400 mt-0.5">現在のバージョン：v{APP_VERSION}</p>
               {checkState === "latest" && (
@@ -73,7 +74,7 @@ export default function SettingsModal({ onClose }: Props) {
             {checkState === "update-available" ? (
               <button
                 onClick={handleUpdate}
-                className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold transition-colors shadow-sm"
+                className="shrink-0 px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold transition-colors shadow-sm"
               >
                 今すぐ更新
               </button>
@@ -81,7 +82,7 @@ export default function SettingsModal({ onClose }: Props) {
               <button
                 onClick={handleCheckVersion}
                 disabled={checkState === "checking" || checkState === "latest"}
-                className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors
+                className={`shrink-0 px-4 py-2 rounded-lg text-xs font-semibold transition-colors
                   ${checkState === "checking" || checkState === "latest"
                     ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                     : "bg-gray-800 hover:bg-gray-700 text-white shadow-sm"

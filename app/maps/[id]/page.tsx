@@ -10,6 +10,7 @@ import MindMapCanvas from "@/components/MindMapCanvas";
 import LineMessagePanel from "@/components/LineMessagePanel";
 import LinePreviewModal from "@/components/LinePreviewModal";
 import SettingsModal from "@/components/SettingsModal";
+import { useVersionCheck } from "@/hooks/useVersionCheck";
 
 function groupByDate(entries: HistoryEntry[]) {
   const groups: { date: string; entries: HistoryEntry[] }[] = [];
@@ -40,6 +41,7 @@ export default function MapEditorPage() {
   const [historyMenuId, setHistoryMenuId] = useState<string | null>(null);
   const [historyPreview, setHistoryPreview] = useState<HistoryEntry | null>(null); // ④
   const [showSettings, setShowSettings] = useState(false);
+  const { hasUpdate, latestVersion } = useVersionCheck();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<{ exportSVG: () => void; exportPNG: () => void } | null>(null);
   const lastHistorySave = useRef<number>(0);
@@ -219,12 +221,15 @@ export default function MapEditorPage() {
           <button
             onClick={() => setShowSettings(true)}
             title="アプリ設定"
-            className="absolute bottom-4 right-4 w-8 h-8 rounded-full bg-white/80 hover:bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all backdrop-blur-sm z-10"
+            className="absolute bottom-4 right-4 w-8 h-8 rounded-full bg-white/80 hover:bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all backdrop-blur-sm z-10 relative"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3"/>
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
             </svg>
+            {hasUpdate && (
+              <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-400 rounded-full border-2 border-white" />
+            )}
           </button>
         </div>
 
@@ -305,7 +310,13 @@ export default function MapEditorPage() {
       )}
 
       {/* 全体設定モーダル */}
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          initialHasUpdate={hasUpdate}
+          initialLatestVersion={latestVersion}
+        />
+      )}
     </div>
   );
 }
