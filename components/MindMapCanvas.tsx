@@ -558,6 +558,19 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     onNodesChange(updated);
   }, [nodes, selectedIds, pushUndo, onNodesChange]);
 
+  const resetToAutoSize = useCallback(() => {
+    const sel = nodes.filter(n => selectedIds.has(n.id));
+    if (sel.length < 1) return;
+    pushUndo();
+    const updated = nodes.map(n =>
+      selectedIds.has(n.id)
+        ? { ...n, customWidth: undefined, customHeight: undefined }
+        : n
+    );
+    setNodes(updated);
+    onNodesChange(updated);
+  }, [nodes, selectedIds, pushUndo, onNodesChange]);
+
   const exportSVG = useCallback(() => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([buildExportSVG(nodes, edgeStyle)], { type: "image/svg+xml" }));
@@ -1278,6 +1291,11 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
           <div className="relative group">
             <button onClick={matchSelectedSize} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊞</button>
             <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">最大サイズに揃える</span>
+          </div>
+          {/* 自動サイズリセット */}
+          <div className="relative group">
+            <button onClick={resetToAutoSize} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊡</button>
+            <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">文字サイズに自動調整</span>
           </div>
         </div>
       )}
