@@ -20,6 +20,8 @@ export interface MindMapNode {
   customWidth?: number;
   customHeight?: number;
   lineMessage?: LineMessageData;
+  checklist?: ChecklistItem[];
+  priority?: 1 | 2 | 3 | 4;
 }
 
 // ── LINE モード ──────────────────────────────────────
@@ -48,6 +50,12 @@ export interface LineMessageData {
   cards?: LineCarouselCard[];
 }
 // ──────────────────────────────────────────────────────
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
 
 export interface StickyNote {
   id: string;

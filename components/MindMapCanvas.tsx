@@ -32,6 +32,7 @@ const CTX_SHAPES = [
   { id: "diamond", l: "◇" }, { id: "text", l: "T" },
 ] as const;
 const CTX_SIZES = [11, 13, 15, 17] as const;
+const PRIORITY_COLORS: Record<1 | 2 | 3 | 4, string> = { 1: "#ef4444", 2: "#f97316", 3: "#eab308", 4: "#94a3b8" };
 const STICKY_COLORS = ["#fef08a", "#fda4af", "#86efac", "#93c5fd", "#d8b4fe", "#fed7aa"] as const;
 const STICKY_DEFAULT_W = 160;
 const STICKY_DEFAULT_H = 120;
@@ -1000,6 +1001,28 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                     {mode === "line" && node.lineMessage && (
                       <text x={-w / 2 + 8} y={h / 2 - 8} fontSize={10} style={{ pointerEvents: "none" }}>📱</text>
                     )}
+                    {node.priority && (
+                      <g style={{ pointerEvents: "none" }}>
+                        <circle cx={-w / 2 + 10} cy={-h / 2 + 10} r={9}
+                          fill={PRIORITY_COLORS[node.priority as 1|2|3|4]} />
+                        <text x={-w / 2 + 10} y={-h / 2 + 10}
+                          textAnchor="middle" dominantBaseline="central"
+                          fontSize={10} fill="white" fontWeight="bold"
+                          style={{ pointerEvents: "none" }}>
+                          {node.priority}
+                        </text>
+                      </g>
+                    )}
+                    {node.checklist && node.checklist.length > 0 && (
+                      <text
+                        x={w / 2 - 5} y={h / 2 - 5}
+                        textAnchor="end" dominantBaseline="auto"
+                        fontSize={9} fill="rgba(255,255,255,0.9)"
+                        fontFamily="sans-serif"
+                        style={{ pointerEvents: "none" }}>
+                        ✓{node.checklist.filter(i => i.done).length}/{node.checklist.length}
+                      </text>
+                    )}
                     {node.imageUrl && (
                       <image href={node.imageUrl} x={-w / 2} y={h / 2 + 4} width={w} height={40} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: "none" }} />
                     )}
@@ -1350,6 +1373,29 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
           {isBatch && (
             <div className="text-xs text-indigo-600 font-semibold bg-indigo-50 rounded-lg px-2 py-1">
               {selectedIds.size}個のノードに適用
+            </div>
+          )}
+
+          {/* 優先度（単一選択のみ） */}
+          {!isBatch && (
+            <div>
+              <p className="text-xs text-gray-400 mb-1">優先度</p>
+              <div className="flex gap-1 items-center">
+                {([1, 2, 3, 4] as const).map(p => (
+                  <button
+                    key={p}
+                    onClick={() => applyFormat({ priority: ctxNode.priority === p ? undefined : p })}
+                    className={`w-7 h-7 rounded-full text-xs font-bold transition-all ${ctxNode.priority === p ? "ring-2 ring-offset-1 ring-gray-400 scale-110" : "opacity-75 hover:opacity-100 hover:scale-105"}`}
+                    style={{ backgroundColor: PRIORITY_COLORS[p], color: "white" }}
+                  >{p}</button>
+                ))}
+                {ctxNode.priority && (
+                  <button
+                    onClick={() => applyFormat({ priority: undefined })}
+                    className="w-6 h-6 rounded-full text-xs border border-gray-200 text-gray-400 hover:bg-gray-50 flex items-center justify-center"
+                  >✕</button>
+                )}
+              </div>
             </div>
           )}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { MindMapNode } from "@/types";
+import { MindMapNode, ChecklistItem } from "@/types";
 
 const COLORS = [
   "#6366f1", "#8b5cf6", "#ec4899", "#ef4444",
@@ -27,10 +27,11 @@ interface Props {
   onUpdate: (node: MindMapNode) => void;
 }
 
-type Panel = "nodeColor" | "textColor" | "icon" | "link" | "note" | "media" | null;
+type Panel = "nodeColor" | "textColor" | "icon" | "link" | "note" | "media" | "checklist" | null;
 
 export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props) {
   const [panel, setPanel] = useState<Panel>(null);
+  const [newItemText, setNewItemText] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   const togglePanel = (p: Panel) => setPanel(prev => prev === p ? null : p);
@@ -146,6 +147,14 @@ export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props)
           className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center hover:bg-gray-100 transition-colors
             ${panel === "note" ? "bg-indigo-100 text-indigo-600" : "text-gray-500"} ${node.note ? "text-indigo-500" : ""}`}
         >💬</button>
+
+        {/* チェックリスト */}
+        <button
+          title="チェックリスト"
+          onClick={() => togglePanel("checklist")}
+          className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center hover:bg-gray-100 transition-colors
+            ${panel === "checklist" ? "bg-indigo-100 text-indigo-600" : "text-gray-500"} ${(node.checklist?.length ?? 0) > 0 ? "text-emerald-500" : ""}`}
+        >✅</button>
       </div>
 
       {/* ─── サブパネル（ノード色）─── */}
@@ -281,6 +290,86 @@ export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props)
               }
             }}
           />
+        </div>
+      )}
+
+      {/* ─── サブパネル（チェックリスト）─── */}
+      {panel === "checklist" && (
+        <div className="mt-1.5 bg-white rounded-xl shadow-lg border border-gray-100 p-3"
+          style={{ width: TOOLBAR_W }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-gray-400 font-medium">チェックリスト</p>
+            {(node.checklist?.length ?? 0) > 0 && (
+              <span className="text-xs text-emerald-500 font-semibold">
+                {node.checklist!.filter(i => i.done).length}/{node.checklist!.length} 完了
+              </span>
+            )}
+          </div>
+
+          {/* アイテム一覧 */}
+          <div className="space-y-1 mb-3 max-h-48 overflow-y-auto">
+            {(node.checklist ?? []).length === 0 && (
+              <p className="text-xs text-gray-300 text-center py-3">アイテムがありません</p>
+            )}
+            {(node.checklist ?? []).map(item => (
+              <div key={item.id} className="flex items-center gap-2 group py-0.5">
+                <input
+                  type="checkbox"
+                  checked={item.done}
+                  onChange={() => onUpdate({
+                    ...node,
+                    checklist: node.checklist!.map(i => i.id === item.id ? { ...i, done: !i.done } : i),
+                  })}
+                  className="w-3.5 h-3.5 accent-indigo-500 shrink-0"
+                />
+                <span className={`flex-1 text-xs break-all ${item.done ? "line-through text-gray-400" : "text-gray-700"}`}>
+                  {item.text}
+                </span>
+                <button
+                  onClick={() => {
+                    const updated = node.checklist!.filter(i => i.id !== item.id);
+                    onUpdate({ ...node, checklist: updated.length > 0 ? updated : undefined });
+                  }}
+                  className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-xs transition-opacity shrink-0"
+                >✕</button>
+              </div>
+            ))}
+          </div>
+
+          {/* 新規アイテム入力 */}
+          <div className="flex gap-1">
+            <input
+              type="text"
+              value={newItemText}
+              onChange={e => setNewItemText(e.target.value)}
+              onKeyDown={e => {
+                e.stopPropagation();
+                if (e.ctrlKey && (e.key === "a" || e.key === "A")) {
+                  e.preventDefault();
+                  (e.target as HTMLInputElement).select();
+                }
+                if (e.key === "Enter" && newItemText.trim()) {
+                  const newItem: ChecklistItem = { id: `item-${Date.now()}`, text: newItemText.trim(), done: false };
+                  onUpdate({ ...node, checklist: [...(node.checklist ?? []), newItem] });
+                  setNewItemText("");
+                }
+              }}
+              placeholder="＋ アイテムを追加..."
+              className="flex-1 text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-indigo-400"
+            />
+            <button
+              onClick={() => {
+                if (!newItemText.trim()) return;
+                const newItem: ChecklistItem = { id: `item-${Date.now()}`, text: newItemText.trim(), done: false };
+                onUpdate({ ...node, checklist: [...(node.checklist ?? []), newItem] });
+                setNewItemText("");
+              }}
+              disabled={!newItemText.trim()}
+              className="px-3 py-1.5 text-xs bg-indigo-500 text-white rounded hover:bg-indigo-600 disabled:opacity-40 transition-colors"
+            >追加</button>
+          </div>
         </div>
       )}
     </div>
