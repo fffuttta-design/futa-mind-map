@@ -102,12 +102,14 @@ function nodeWidth(node: MindMapNode): number {
 }
 
 function nodeHeight(node: MindMapNode): number {
-  if (node.customHeight) return node.customHeight;
   if (node.listItems) {
     if (node.collapsed) return LIST_HEADER_H;
     const lih = listItemH(node);
-    return LIST_HEADER_H + countTotalItems(node.listItems) * lih + LIST_ADD_H;
+    const autoH = LIST_HEADER_H + countTotalItems(node.listItems) * lih + LIST_ADD_H;
+    // customHeight が auto より小さければ auto を優先（項目追加で自動拡張）
+    return node.customHeight ? Math.max(node.customHeight, autoH) : autoH;
   }
+  if (node.customHeight) return node.customHeight;
   if (node.imageHeight) return node.imageHeight;
   if (node.shape === "circle") return NODE_H * 2 + 8;
   if (node.shape === "diamond") return NODE_H + 16;
@@ -225,7 +227,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     startCx: number; startCy: number;
     startW: number; startH: number; startNx: number; startNy: number;
     isImage: boolean;
-    startListFontSize?: number;
   } | null>(null);
   const [editorStyle, setEditorStyle] = useState<{ left: number; top: number; width: number; height: number; fontSize: number } | null>(null);
   const [nodeCtxMenu, setNodeCtxMenu] = useState<{ nodeId: string; sx: number; sy: number } | null>(null);
@@ -971,19 +972,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
           setNodes(prev => prev.map(n => n.id === res.id
             ? { ...n, imageWidth: newW, imageHeight: newH, x: newX, y: newY } : n));
         } else {
-          let listFontSizeUpdate: number | undefined;
-          const resNode = nodesRef.current.find(n => n.id === res.id);
-          if (resNode?.listItems && res.startListFontSize) {
-            const scaleW = newW / res.startW;
-            const scaleH = newH / res.startH;
-            const ratio = scaleW / scaleH;
-            if (ratio > 0.6 && ratio < 1.7) {
-              const scale = (scaleW + scaleH) / 2;
-              listFontSizeUpdate = Math.max(8, Math.min(24, Math.round(res.startListFontSize * scale)));
-            }
-          }
           setNodes(prev => prev.map(n => n.id === res.id
-            ? { ...n, customWidth: newW, customHeight: newH, x: newX, y: newY, ...(listFontSizeUpdate !== undefined && n.listItems ? { listFontSize: listFontSizeUpdate } : {}) } : n));
+            ? { ...n, customWidth: newW, customHeight: newH, x: newX, y: newY } : n));
         }
       }
     };
@@ -1303,22 +1293,33 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                                 <text textAnchor="middle" dominantBaseline="central" fontSize={10} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>✓</text>
                               )}
                             </g>
-                            {/* テキスト */}
+                            {/* テキスト（空の場合も透明rectで広いクリック領域を確保） */}
                             {!isEditingThis && (
-                              <text
-                                x={-w / 2 + 34 + indentX} y={iy}
-                                dominantBaseline="central" fontSize={fs}
-                                fill={item.checked ? "#94a3b8" : "#334155"}
-                                textDecoration={item.checked ? "line-through" : undefined}
-                                onMouseDown={e => e.stopPropagation()}
-                                onClick={e => { e.stopPropagation(); startEditListItem(node.id, item.id, item.text); }}
-                                style={{ cursor: "text", pointerEvents: "all" }}
-                              >
-                                {(() => {
-                                  const maxChars = Math.floor((w - 60 - indentX) / (fs * 0.6));
-                                  return item.text.length > maxChars ? item.text.slice(0, maxChars) + "…" : (item.text || " ");
-                                })()}
-                              </text>
+                              <>
+                                {/* 広いクリック当たり判定（空アイテムでも編集開始できるよう） */}
+                                <rect
+                                  x={-w / 2 + 32 + indentX} y={iy - lih / 2 + 2}
+                                  width={w - 80 - indentX} height={lih - 4}
+                                  fill="transparent"
+                                  onMouseDown={e => e.stopPropagation()}
+                                  onClick={e => { e.stopPropagation(); startEditListItem(node.id, item.id, item.text); }}
+                                  style={{ cursor: "text", pointerEvents: "all" }}
+                                />
+                                <text
+                                  x={-w / 2 + 34 + indentX} y={iy}
+                                  dominantBaseline="central" fontSize={fs}
+                                  fill={item.text ? (item.checked ? "#94a3b8" : "#334155") : "#cbd5e1"}
+                                  fontStyle={item.text ? "normal" : "italic"}
+                                  textDecoration={item.checked && item.text ? "line-through" : undefined}
+                                  style={{ pointerEvents: "none" }}
+                                >
+                                  {(() => {
+                                    if (!item.text) return "入力...";
+                                    const maxChars = Math.floor((w - 80 - indentX) / (fs * 0.6));
+                                    return item.text.length > maxChars ? item.text.slice(0, maxChars) + "…" : item.text;
+                                  })()}
+                                </text>
+                              </>
                             )}
                             {/* サブ項目追加ボタン（depth < 2 の時のみ） */}
                             {!readOnly && depth < 2 && (
@@ -1382,7 +1383,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                           e.stopPropagation();
                           pushUndo();
                           const cp = toCanvas(e.clientX, e.clientY);
-                          setResizing({ id: node.id, corner, startCx: cp.x, startCy: cp.y, startW: w, startH: h, startNx: node.x, startNy: node.y, isImage: false, startListFontSize: node.listFontSize ?? 12 });
+                          setResizing({ id: node.id, corner, startCx: cp.x, startCy: cp.y, startW: w, startH: h, startNx: node.x, startNy: node.y, isImage: false });
                         }}
                       />
                     ))}
