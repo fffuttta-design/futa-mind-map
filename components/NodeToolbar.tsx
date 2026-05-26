@@ -147,13 +147,13 @@ export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props)
             ${panel === "note" ? "bg-indigo-100 text-indigo-600" : "text-gray-500"} ${node.note ? "text-indigo-500" : ""}`}
         >💬</button>
 
-        {/* チェック完了 */}
+        {/* チェックボックスノード切り替え */}
         <button
-          title={node.checked ? "完了を解除" : "完了にする"}
-          onClick={() => onUpdate({ ...node, checked: !node.checked })}
+          title={node.isCheckbox ? "チェックボックスを解除" : "チェックボックスノードにする"}
+          onClick={() => onUpdate({ ...node, isCheckbox: !node.isCheckbox, checked: false })}
           className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center hover:bg-gray-100 transition-colors
-            ${node.checked ? "bg-emerald-100 text-emerald-600" : "text-gray-500"}`}
-        >{node.checked ? "✅" : "☐"}</button>
+            ${node.isCheckbox ? "bg-emerald-100 text-emerald-600" : "text-gray-500"}`}
+        >{node.isCheckbox ? "☑" : "☐"}</button>
       </div>
 
       {/* ─── サブパネル（ノード色）─── */}

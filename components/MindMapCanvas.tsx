@@ -972,15 +972,15 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                         fontSize={node.fontSize ?? 13}
                         fontWeight={node.fontBold ? "bold" : "500"}
                         fontStyle={node.fontItalic ? "italic" : "normal"}
-                        textDecoration={node.checked ? "line-through" : undefined}
-                        opacity={node.checked ? 0.7 : 1}
+                        textDecoration={node.isCheckbox && node.checked ? "line-through" : undefined}
+                        opacity={node.isCheckbox && node.checked ? 0.7 : 1}
                         style={{ pointerEvents: "none" }}
                       >
                         {textLines.map((line, i) => {
                           const totalH = (textLines.length - 1) * LINE_H;
                           const display = line.length > 20 ? line.slice(0, 20) + "…" : line;
                           return (
-                            <tspan key={i} x={node.icon ? 8 : 0} dy={i === 0 ? -totalH / 2 : LINE_H}>
+                            <tspan key={i} x={node.isCheckbox ? 12 : (node.icon ? 8 : 0)} dy={i === 0 ? -totalH / 2 : LINE_H}>
                               {display}
                             </tspan>
                           );
@@ -1053,17 +1053,17 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                         </>
                       );
                     })()}
-                    {/* チェックボックス（ホバー・選択時 + チェック済みは常時表示） */}
-                    {!readOnly && (node.checked || hoveredId === node.id || isSelected) && (
+                    {/* チェックボックス（isCheckbox=true のノードのテキスト左に表示） */}
+                    {node.isCheckbox && (
                       <g
-                        transform={`translate(${-w / 2 + 10}, ${h / 2 - 10})`}
+                        transform={`translate(${-w / 2 + 14}, 0)`}
                         onMouseDown={e => e.stopPropagation()}
                         onClick={e => { e.stopPropagation(); toggleNodeChecked(node.id); }}
                         style={{ cursor: "pointer" }}
                       >
                         <rect x={-7} y={-7} width={14} height={14} rx={3}
-                          fill={node.checked ? "#10b981" : "rgba(255,255,255,0.25)"}
-                          stroke={node.checked ? "#10b981" : "rgba(255,255,255,0.7)"}
+                          fill={node.checked ? "#10b981" : "rgba(255,255,255,0.2)"}
+                          stroke={node.checked ? "#10b981" : "rgba(255,255,255,0.8)"}
                           strokeWidth={1.5}
                         />
                         {node.checked && (
@@ -1476,6 +1476,12 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               if (ctxNode) { setEditingId(ctxNode.id); setEditText(ctxNode.text); }
               setNodeCtxMenu(null);
             }} className="w-full px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">✏️ 名前を変更</button>
+            <button onClick={() => {
+              applyFormat({ isCheckbox: !ctxNode?.isCheckbox, checked: false });
+              setNodeCtxMenu(null);
+            }} className="w-full px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">
+              {ctxNode?.isCheckbox ? "☑ チェックボックスを解除" : "☐ チェックボックスノードにする"}
+            </button>
           </div>
           {/* 2ノード選択時：位置の入れ替え */}
           {isBatch && selectedIds.size === 2 && (
