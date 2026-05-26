@@ -1770,13 +1770,21 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         >
           {/* ドラッグハンドル */}
           <div
-            className="flex items-center justify-center py-1.5 cursor-grab active:cursor-grabbing rounded-t-xl border-b border-gray-100 bg-gray-50 hover:bg-gray-100 shrink-0"
+            className="flex items-center justify-center gap-1.5 py-2 cursor-grab active:cursor-grabbing rounded-t-xl border-b border-gray-200 bg-gray-100 hover:bg-gray-200 transition-colors shrink-0 select-none"
             onMouseDown={e => {
               e.stopPropagation();
               ctxMenuDragRef.current = { startMx: e.clientX, startMy: e.clientY, startSx: nodeCtxMenu.sx, startSy: nodeCtxMenu.sy };
             }}
           >
-            <div className="w-8 h-1 rounded-full bg-gray-300" />
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-gray-400 pointer-events-none">
+              <circle cx="4" cy="3" r="1.2" fill="currentColor"/>
+              <circle cx="4" cy="7" r="1.2" fill="currentColor"/>
+              <circle cx="4" cy="11" r="1.2" fill="currentColor"/>
+              <circle cx="10" cy="3" r="1.2" fill="currentColor"/>
+              <circle cx="10" cy="7" r="1.2" fill="currentColor"/>
+              <circle cx="10" cy="11" r="1.2" fill="currentColor"/>
+            </svg>
+            <span className="text-xs text-gray-400 pointer-events-none font-medium">ドラッグで移動</span>
           </div>
           <div className="p-3 flex flex-col gap-2.5 overflow-y-auto" style={{ maxHeight: "70vh" }}>
           {/* 複数選択表示 */}
