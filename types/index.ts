@@ -17,6 +17,8 @@ export interface MindMapNode {
   textColor?: string;
   imageWidth?: number;
   imageHeight?: number;
+  customWidth?: number;
+  customHeight?: number;
   lineMessage?: LineMessageData;
 }
 

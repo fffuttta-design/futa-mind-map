@@ -37,6 +37,7 @@ const STICKY_DEFAULT_W = 160;
 const STICKY_DEFAULT_H = 120;
 
 function nodeWidth(node: MindMapNode): number {
+  if (node.customWidth) return node.customWidth;
   if (node.imageWidth) return node.imageWidth;
   const maxLineLen = Math.max(...node.text.split("\n").map(l => l.length), 1);
   const base = Math.max(80, Math.min(220, maxLineLen * 8.5 + 48));
@@ -46,6 +47,7 @@ function nodeWidth(node: MindMapNode): number {
 }
 
 function nodeHeight(node: MindMapNode): number {
+  if (node.customHeight) return node.customHeight;
   if (node.imageHeight) return node.imageHeight;
   if (node.shape === "circle") return NODE_H * 2 + 8;
   if (node.shape === "diamond") return NODE_H + 16;
@@ -162,6 +164,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     id: string; corner: "se" | "sw" | "ne" | "nw";
     startCx: number; startCy: number;
     startW: number; startH: number; startNx: number; startNy: number;
+    isImage: boolean;
   } | null>(null);
   const [editorStyle, setEditorStyle] = useState<{ left: number; top: number; width: number; height: number; fontSize: number } | null>(null);
   const [nodeCtxMenu, setNodeCtxMenu] = useState<{ nodeId: string; sx: number; sy: number } | null>(null);
@@ -211,12 +214,13 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   draggingStickyRef.current = draggingSticky;
   onStickyNotesChangeRef.current = onStickyNotesChange;
 
-  // Undo / Redo
-  const undoStack = useRef<MindMapNode[][]>([]);
-  const redoStack = useRef<MindMapNode[][]>([]);
+  // Undo / Redo（ノード＋付箋を一括管理）
+  type HistoryState = { nodes: MindMapNode[]; stickyNotes: StickyNote[] };
+  const undoStack = useRef<HistoryState[]>([]);
+  const redoStack = useRef<HistoryState[]>([]);
 
   const pushUndo = useCallback(() => {
-    undoStack.current.push([...nodesRef.current]);
+    undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current] });
     if (undoStack.current.length > 50) undoStack.current.shift();
     redoStack.current = [];
   }, []);
@@ -291,17 +295,21 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const undo = useCallback(() => {
     if (undoStack.current.length === 0) return;
     const prev = undoStack.current.pop()!;
-    redoStack.current.push([...nodesRef.current]);
-    setNodes(prev);
-    onNodesChangeRef.current(prev);
+    redoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current] });
+    setNodes(prev.nodes);
+    onNodesChangeRef.current(prev.nodes);
+    setStickyNotes(prev.stickyNotes);
+    onStickyNotesChangeRef.current?.(prev.stickyNotes);
   }, []);
 
   const redo = useCallback(() => {
     if (redoStack.current.length === 0) return;
     const next = redoStack.current.pop()!;
-    undoStack.current.push([...nodesRef.current]);
-    setNodes(next);
-    onNodesChangeRef.current(next);
+    undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current] });
+    setNodes(next.nodes);
+    onNodesChangeRef.current(next.nodes);
+    setStickyNotes(next.stickyNotes);
+    onStickyNotesChangeRef.current?.(next.stickyNotes);
   }, []);
 
   const getVisibleNodes = useCallback((nodeList: MindMapNode[]) => nodeList, []);
@@ -350,11 +358,13 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   }, [editingId, editText, nodes, updateNodes]);
 
   const updateStickyNotes = useCallback((updated: StickyNote[]) => {
+    pushUndo();
     setStickyNotes(updated);
     onStickyNotesChangeRef.current?.(updated);
-  }, []);
+  }, [pushUndo]);
 
   const addStickyNote = useCallback((cx: number, cy: number) => {
+    pushUndo();
     const newNote: StickyNote = {
       id: `sticky-${Date.now()}`,
       x: cx - STICKY_DEFAULT_W / 2,
@@ -369,17 +379,18 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setSelectedIds(new Set());
     setInsertMenu(null);
     setTimeout(() => { setEditingStickyId(newNote.id); setEditingStickyText(""); }, 50);
-  }, []);
+  }, [pushUndo]);
 
   const commitStickyEdit = useCallback(() => {
     if (!editingStickyId) return;
+    pushUndo();
     setStickyNotes(prev => {
       const updated = prev.map(n => n.id === editingStickyId ? { ...n, text: editingStickyText } : n);
       onStickyNotesChangeRef.current?.(updated);
       return updated;
     });
     setEditingStickyId(null);
-  }, [editingStickyId, editingStickyText]);
+  }, [editingStickyId, editingStickyText, pushUndo]);
 
   const addFloatingNode = useCallback((cx: number, cy: number) => {
     const newNode: MindMapNode = {
@@ -648,8 +659,13 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
           default: newW = Math.max(minW, res.startW - dx); newH = Math.max(minH, res.startH - dy);
             newX = (res.startNx + res.startW / 2) - newW / 2; newY = (res.startNy + res.startH / 2) - newH / 2;
         }
-        setNodes(prev => prev.map(n => n.id === res.id
-          ? { ...n, imageWidth: newW, imageHeight: newH, x: newX, y: newY } : n));
+        if (res.isImage) {
+          setNodes(prev => prev.map(n => n.id === res.id
+            ? { ...n, imageWidth: newW, imageHeight: newH, x: newX, y: newY } : n));
+        } else {
+          setNodes(prev => prev.map(n => n.id === res.id
+            ? { ...n, customWidth: newW, customHeight: newH, x: newX, y: newY } : n));
+        }
       }
     };
     const onUp = (e: MouseEvent) => {
@@ -803,7 +819,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         onNodesChangeRef.current(updated);
         return updated;
       });
-      undoStack.current.push([...nodesRef.current]);
+      pushUndo();
     } else {
       setNodes(prev => {
         const updated = prev.map(n => n.id === nodeCtxMenu.nodeId ? { ...n, ...updates } : n);
@@ -890,7 +906,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                           e.stopPropagation();
                           pushUndo();
                           const cp = toCanvas(e.clientX, e.clientY);
-                          setResizing({ id: node.id, corner, startCx: cp.x, startCy: cp.y, startW: w, startH: h, startNx: node.x, startNy: node.y });
+                          setResizing({ id: node.id, corner, startCx: cp.x, startCy: cp.y, startW: w, startH: h, startNx: node.x, startNy: node.y, isImage: true });
                         }}
                       />
                     ))}
@@ -969,6 +985,23 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                         )}
                       </>
                     )}
+                    {/* ノードリサイズハンドル（選択時に四隅に表示） */}
+                    {isSelected && !readOnly && !editingId && (
+                      [["se", w / 2, h / 2], ["sw", -w / 2, h / 2], ["ne", w / 2, -h / 2], ["nw", -w / 2, -h / 2]] as ["se" | "sw" | "ne" | "nw", number, number][]
+                    ).map(([corner, hx, hy]) => (
+                      <rect
+                        key={`resize-${corner}`}
+                        x={hx - 5} y={hy - 5} width={10} height={10}
+                        fill="white" stroke="#6366f1" strokeWidth={1.5} rx={2}
+                        style={{ cursor: (corner === "se" || corner === "nw") ? "nwse-resize" : "nesw-resize", pointerEvents: "all" }}
+                        onMouseDown={e => {
+                          e.stopPropagation();
+                          pushUndo();
+                          const cp = toCanvas(e.clientX, e.clientY);
+                          setResizing({ id: node.id, corner, startCx: cp.x, startCy: cp.y, startW: w, startH: h, startNx: node.x, startNy: node.y, isImage: false });
+                        }}
+                      />
+                    ))}
                   </>
                 )}
               </g>
