@@ -456,6 +456,21 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setInsertImageUrl("");
   }, [nodes, updateNodes]);
 
+  // 2ノード選択時に位置を入れ替える
+  const swapNodePositions = useCallback(() => {
+    if (selectedIds.size !== 2) return;
+    const [idA, idB] = [...selectedIds];
+    const nA = nodes.find(n => n.id === idA);
+    const nB = nodes.find(n => n.id === idB);
+    if (!nA || !nB) return;
+    updateNodes(nodes.map(n => {
+      if (n.id === idA) return { ...n, x: nB.x, y: nB.y };
+      if (n.id === idB) return { ...n, x: nA.x, y: nA.y };
+      return n;
+    }));
+    setNodeCtxMenu(null);
+  }, [selectedIds, nodes, updateNodes]);
+
   const alignSiblings = useCallback((nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
@@ -1400,6 +1415,17 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               setNodeCtxMenu(null);
             }} className="w-full px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">✏️ 名前を変更</button>
           </div>
+          {/* 2ノード選択時：位置の入れ替え */}
+          {isBatch && selectedIds.size === 2 && (
+            <div className="border-t border-gray-100 pt-1">
+              <button
+                onClick={swapNodePositions}
+                className="w-full px-3 py-1.5 text-sm text-left text-indigo-600 hover:bg-indigo-50 rounded-lg font-medium"
+              >
+                🔄 位置を入れ替え
+              </button>
+            </div>
+          )}
           <div className="border-t border-gray-100 pt-1">
             <button onClick={() => { deleteNodes(isBatch ? selectedIds : new Set([nodeCtxMenu.nodeId])); setNodeCtxMenu(null); }}
               className="w-full px-3 py-1.5 text-sm text-left text-red-500 hover:bg-red-50 rounded-lg">
