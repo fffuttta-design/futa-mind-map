@@ -472,6 +472,10 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setNodeCtxMenu(null);
   }, [selectedIds, nodes, updateNodes]);
 
+  const toggleNodeChecked = useCallback((nodeId: string) => {
+    updateNodes(nodes.map(n => n.id === nodeId ? { ...n, checked: !n.checked } : n));
+  }, [nodes, updateNodes]);
+
   const alignSiblings = useCallback((nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
@@ -968,6 +972,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                         fontSize={node.fontSize ?? 13}
                         fontWeight={node.fontBold ? "bold" : "500"}
                         fontStyle={node.fontItalic ? "italic" : "normal"}
+                        textDecoration={node.checked ? "line-through" : undefined}
+                        opacity={node.checked ? 0.7 : 1}
                         style={{ pointerEvents: "none" }}
                       >
                         {textLines.map((line, i) => {
@@ -1013,16 +1019,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                         </text>
                       </g>
                     )}
-                    {node.checklist && node.checklist.length > 0 && (
-                      <text
-                        x={w / 2 - 5} y={h / 2 - 5}
-                        textAnchor="end" dominantBaseline="auto"
-                        fontSize={9} fill="rgba(255,255,255,0.9)"
-                        fontFamily="sans-serif"
-                        style={{ pointerEvents: "none" }}>
-                        ✓{node.checklist.filter(i => i.done).length}/{node.checklist.length}
-                      </text>
-                    )}
                     {node.imageUrl && (
                       <image href={node.imageUrl} x={-w / 2} y={h / 2 + 4} width={w} height={40} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: "none" }} />
                     )}
@@ -1057,6 +1053,26 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                         </>
                       );
                     })()}
+                    {/* チェックボックス（ホバー・選択時 + チェック済みは常時表示） */}
+                    {!readOnly && (node.checked || hoveredId === node.id || isSelected) && (
+                      <g
+                        transform={`translate(${-w / 2 + 10}, ${h / 2 - 10})`}
+                        onMouseDown={e => e.stopPropagation()}
+                        onClick={e => { e.stopPropagation(); toggleNodeChecked(node.id); }}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <rect x={-7} y={-7} width={14} height={14} rx={3}
+                          fill={node.checked ? "#10b981" : "rgba(255,255,255,0.25)"}
+                          stroke={node.checked ? "#10b981" : "rgba(255,255,255,0.7)"}
+                          strokeWidth={1.5}
+                        />
+                        {node.checked && (
+                          <text x={0} y={0} textAnchor="middle" dominantBaseline="central"
+                            fontSize={10} fill="white" fontWeight="bold"
+                            style={{ pointerEvents: "none" }}>✓</text>
+                        )}
+                      </g>
+                    )}
                     {/* ノードリサイズハンドル（選択時に四隅に表示） */}
                     {isSelected && !readOnly && !editingId && (
                       [["se", w / 2, h / 2], ["sw", -w / 2, h / 2], ["ne", w / 2, -h / 2], ["nw", -w / 2, -h / 2]] as ["se" | "sw" | "ne" | "nw", number, number][]
