@@ -44,6 +44,51 @@ const STICKY_COLORS = ["#fef08a", "#fda4af", "#86efac", "#93c5fd", "#d8b4fe", "#
 const STICKY_DEFAULT_W = 160;
 const STICKY_DEFAULT_H = 120;
 
+/** ListItemツリーをフラット化 (depth 付き) */
+function flattenListItems(items: ListItem[], depth = 0): { item: ListItem; depth: number }[] {
+  return items.flatMap(item => [
+    { item, depth },
+    ...(item.children?.length ? flattenListItems(item.children, depth + 1) : []),
+  ]);
+}
+
+/** ListItemツリーの総アイテム数（子孫含む） */
+function countTotalItems(items: ListItem[]): number {
+  return items.reduce((s, it) => s + 1 + countTotalItems(it.children ?? []), 0);
+}
+
+/** ツリー内の特定IDのアイテムを更新 */
+function updateItemInTree(items: ListItem[], id: string, updater: (item: ListItem) => ListItem): ListItem[] {
+  return items.map(item =>
+    item.id === id
+      ? updater(item)
+      : { ...item, children: item.children ? updateItemInTree(item.children, id, updater) : undefined }
+  );
+}
+
+/** ツリーから特定IDのアイテムを削除 */
+function deleteItemFromTree(items: ListItem[], id: string): ListItem[] {
+  return items
+    .filter(item => item.id !== id)
+    .map(item => item.children
+      ? { ...item, children: deleteItemFromTree(item.children, id) }
+      : item
+    );
+}
+
+/** ツリーの特定IDのアイテムに子を追加 */
+function addChildToItem(items: ListItem[], parentId: string, newItem: ListItem): ListItem[] {
+  return items.map(item =>
+    item.id === parentId
+      ? { ...item, children: [...(item.children ?? []), newItem] }
+      : { ...item, children: item.children ? addChildToItem(item.children, parentId, newItem) : undefined }
+  );
+}
+
+function listItemH(node: MindMapNode): number {
+  return Math.max(24, (node.listFontSize ?? 12) * 2.0);
+}
+
 function nodeWidth(node: MindMapNode): number {
   if (node.customWidth) return node.customWidth;
   if (node.listItems) return LIST_MIN_W;
@@ -60,7 +105,8 @@ function nodeHeight(node: MindMapNode): number {
   if (node.customHeight) return node.customHeight;
   if (node.listItems) {
     if (node.collapsed) return LIST_HEADER_H;
-    return LIST_HEADER_H + node.listItems.length * LIST_ITEM_H + LIST_ADD_H;
+    const lih = listItemH(node);
+    return LIST_HEADER_H + countTotalItems(node.listItems) * lih + LIST_ADD_H;
   }
   if (node.imageHeight) return node.imageHeight;
   if (node.shape === "circle") return NODE_H * 2 + 8;
@@ -179,6 +225,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     startCx: number; startCy: number;
     startW: number; startH: number; startNx: number; startNy: number;
     isImage: boolean;
+    startListFontSize?: number;
   } | null>(null);
   const [editorStyle, setEditorStyle] = useState<{ left: number; top: number; width: number; height: number; fontSize: number } | null>(null);
   const [nodeCtxMenu, setNodeCtxMenu] = useState<{ nodeId: string; sx: number; sy: number } | null>(null);
@@ -314,21 +361,25 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     if (!svg || !editingListItem) { setListItemEditorStyle(null); return; }
     const node = nodes.find(n => n.id === editingListItem.nodeId);
     if (!node?.listItems) { setListItemEditorStyle(null); return; }
-    const itemIdx = node.listItems.findIndex(it => it.id === editingListItem.itemId);
-    if (itemIdx === -1) { setListItemEditorStyle(null); return; }
+    const flattened = flattenListItems(node.listItems);
+    const flatIdx = flattened.findIndex(f => f.item.id === editingListItem.itemId);
+    if (flatIdx === -1) { setListItemEditorStyle(null); return; }
+    const { depth } = flattened[flatIdx];
     const w = nodeWidth(node);
     const h = nodeHeight(node);
+    const lih = listItemH(node);
     const r = svg.getBoundingClientRect();
     const nodeScreenX = r.width / 2 + pan.x + node.x * zoom;
     const nodeScreenY = r.height / 2 + pan.y + node.y * zoom;
-    const itemRelY = -h / 2 + LIST_HEADER_H + itemIdx * LIST_ITEM_H + LIST_ITEM_H / 2;
-    const itemScreenX = nodeScreenX + (-w / 2 + 36) * zoom;
+    const itemRelY = -h / 2 + LIST_HEADER_H + flatIdx * lih + lih / 2;
+    const indentX = depth * 16;
+    const itemScreenX = nodeScreenX + (-w / 2 + 36 + indentX) * zoom;
     const itemScreenY = nodeScreenY + itemRelY * zoom;
     setListItemEditorStyle({
       left: itemScreenX,
-      top: itemScreenY - (LIST_ITEM_H * zoom) / 2,
-      width: (w - 44) * zoom,
-      height: LIST_ITEM_H * zoom,
+      top: itemScreenY - (lih * zoom) / 2,
+      width: (w - 50 - indentX) * zoom,
+      height: lih * zoom,
     });
   }, [editingListItem, nodes, pan, zoom]);
 
@@ -634,9 +685,10 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   const toggleListItemChecked = useCallback((nodeId: string, itemId: string) => {
     const updated = nodesRef.current.map(n =>
-      n.id === nodeId
-        ? { ...n, listItems: n.listItems?.map(it => it.id === itemId ? { ...it, checked: !it.checked } : it) }
-        : n
+      n.id !== nodeId ? n : {
+        ...n,
+        listItems: updateItemInTree(n.listItems ?? [], itemId, it => ({ ...it, checked: !it.checked })),
+      }
     );
     setNodes(updated);
     onNodesChangeRef.current(updated);
@@ -649,23 +701,27 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const commitListItemEdit = useCallback(() => {
     if (!editingListItem) return;
     const { nodeId, itemId, text } = editingListItem;
-    const updated = nodesRef.current.map(n => {
-      if (n.id !== nodeId) return n;
-      if (text.trim() === "") {
-        return { ...n, listItems: n.listItems?.filter(it => it.id !== itemId) };
+    // 空テキストでも削除しない（ゴミ箱ボタンで明示的に削除する）
+    const updated = nodesRef.current.map(n =>
+      n.id !== nodeId ? n : {
+        ...n,
+        listItems: updateItemInTree(n.listItems ?? [], itemId, it => ({ ...it, text })),
       }
-      return { ...n, listItems: n.listItems?.map(it => it.id === itemId ? { ...it, text } : it) };
-    });
+    );
     setNodes(updated);
     onNodesChangeRef.current(updated);
     setEditingListItem(null);
   }, [editingListItem]);
 
-  const addListItem = useCallback((nodeId: string) => {
+  const addListItem = useCallback((nodeId: string, parentItemId?: string) => {
     const newItem: ListItem = { id: `li-${Date.now()}`, text: "", checked: false };
-    const updated = nodesRef.current.map(n =>
-      n.id === nodeId ? { ...n, listItems: [...(n.listItems ?? []), newItem] } : n
-    );
+    const updated = nodesRef.current.map(n => {
+      if (n.id !== nodeId) return n;
+      if (parentItemId) {
+        return { ...n, listItems: addChildToItem(n.listItems ?? [], parentItemId, newItem) };
+      }
+      return { ...n, listItems: [...(n.listItems ?? []), newItem] };
+    });
     setNodes(updated);
     onNodesChangeRef.current(updated);
     setTimeout(() => setEditingListItem({ nodeId, itemId: newItem.id, text: "" }), 30);
@@ -674,7 +730,10 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const deleteListItem = useCallback((nodeId: string, itemId: string) => {
     pushUndo();
     const updated = nodesRef.current.map(n =>
-      n.id === nodeId ? { ...n, listItems: n.listItems?.filter(it => it.id !== itemId) } : n
+      n.id !== nodeId ? n : {
+        ...n,
+        listItems: deleteItemFromTree(n.listItems ?? [], itemId),
+      }
     );
     setNodes(updated);
     onNodesChangeRef.current(updated);
@@ -912,8 +971,19 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
           setNodes(prev => prev.map(n => n.id === res.id
             ? { ...n, imageWidth: newW, imageHeight: newH, x: newX, y: newY } : n));
         } else {
+          let listFontSizeUpdate: number | undefined;
+          const resNode = nodesRef.current.find(n => n.id === res.id);
+          if (resNode?.listItems && res.startListFontSize) {
+            const scaleW = newW / res.startW;
+            const scaleH = newH / res.startH;
+            const ratio = scaleW / scaleH;
+            if (ratio > 0.6 && ratio < 1.7) {
+              const scale = (scaleW + scaleH) / 2;
+              listFontSizeUpdate = Math.max(8, Math.min(24, Math.round(res.startListFontSize * scale)));
+            }
+          }
           setNodes(prev => prev.map(n => n.id === res.id
-            ? { ...n, customWidth: newW, customHeight: newH, x: newX, y: newY } : n));
+            ? { ...n, customWidth: newW, customHeight: newH, x: newX, y: newY, ...(listFontSizeUpdate !== undefined && n.listItems ? { listFontSize: listFontSizeUpdate } : {}) } : n));
         }
       }
     };
@@ -1186,61 +1256,102 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                     )}
                     {/* 進捗 */}
                     {!node.collapsed && node.listItems.length > 0 && (() => {
-                      const done = node.listItems.filter(it => it.checked).length;
+                      const all = flattenListItems(node.listItems);
+                      const done = all.filter(f => f.item.checked).length;
                       return (
                         <text
                           x={w / 2 - 10} y={-h / 2 + LIST_HEADER_H / 2}
                           textAnchor="end" dominantBaseline="central"
                           fontSize={11} fill="rgba(255,255,255,0.85)"
                           style={{ pointerEvents: "none" }}
-                        >{done}/{node.listItems.length}</text>
+                        >{done}/{all.length}</text>
                       );
                     })()}
-                    {/* アイテム行 */}
-                    {!node.collapsed && node.listItems.map((item, idx) => {
-                      const iy = -h / 2 + LIST_HEADER_H + idx * LIST_ITEM_H + LIST_ITEM_H / 2;
-                      const isEditingThis = editingListItem?.nodeId === node.id && editingListItem?.itemId === item.id;
-                      return (
-                        <g key={item.id}>
-                          {/* ホバー背景 */}
-                          <rect x={-w / 2 + 1} y={iy - LIST_ITEM_H / 2} width={w - 2} height={LIST_ITEM_H} fill="transparent" />
-                          {/* チェックボックス */}
-                          <g
-                            transform={`translate(${-w / 2 + 18}, ${iy})`}
-                            onMouseDown={e => e.stopPropagation()}
-                            onClick={e => { e.stopPropagation(); toggleListItemChecked(node.id, item.id); }}
-                            style={{ cursor: "pointer" }}
-                          >
-                            <rect x={-7} y={-7} width={14} height={14} rx={3}
-                              fill={item.checked ? "#10b981" : "white"}
-                              stroke={item.checked ? "#10b981" : "#cbd5e1"}
-                              strokeWidth={1.5}
-                            />
-                            {item.checked && (
-                              <text textAnchor="middle" dominantBaseline="central" fontSize={10} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>✓</text>
+                    {/* アイテム行（フラット化して深さを保持） */}
+                    {!node.collapsed && (() => {
+                      const lih = listItemH(node);
+                      const fs = node.listFontSize ?? 12;
+                      const flattened = flattenListItems(node.listItems);
+                      return flattened.map(({ item, depth }, flatIdx) => {
+                        const iy = -h / 2 + LIST_HEADER_H + flatIdx * lih + lih / 2;
+                        const indentX = depth * 16;
+                        const isEditingThis = editingListItem?.nodeId === node.id && editingListItem?.itemId === item.id;
+                        return (
+                          <g key={item.id}>
+                            <rect x={-w / 2 + 1} y={iy - lih / 2} width={w - 2} height={lih} fill="transparent" />
+                            {/* インデントガイドライン */}
+                            {depth > 0 && (
+                              <line
+                                x1={-w / 2 + 26 + (depth - 1) * 16} y1={iy - lih / 2}
+                                x2={-w / 2 + 26 + (depth - 1) * 16} y2={iy + lih / 2}
+                                stroke="#e2e8f0" strokeWidth={1} style={{ pointerEvents: "none" }}
+                              />
+                            )}
+                            {/* チェックボックス */}
+                            <g
+                              transform={`translate(${-w / 2 + 18 + indentX}, ${iy})`}
+                              onMouseDown={e => e.stopPropagation()}
+                              onClick={e => { e.stopPropagation(); toggleListItemChecked(node.id, item.id); }}
+                              style={{ cursor: "pointer" }}
+                            >
+                              <rect x={-7} y={-7} width={14} height={14} rx={3}
+                                fill={item.checked ? "#10b981" : "white"}
+                                stroke={item.checked ? "#10b981" : "#cbd5e1"}
+                                strokeWidth={1.5}
+                              />
+                              {item.checked && (
+                                <text textAnchor="middle" dominantBaseline="central" fontSize={10} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>✓</text>
+                              )}
+                            </g>
+                            {/* テキスト */}
+                            {!isEditingThis && (
+                              <text
+                                x={-w / 2 + 34 + indentX} y={iy}
+                                dominantBaseline="central" fontSize={fs}
+                                fill={item.checked ? "#94a3b8" : "#334155"}
+                                textDecoration={item.checked ? "line-through" : undefined}
+                                onMouseDown={e => e.stopPropagation()}
+                                onClick={e => { e.stopPropagation(); startEditListItem(node.id, item.id, item.text); }}
+                                style={{ cursor: "text", pointerEvents: "all" }}
+                              >
+                                {(() => {
+                                  const maxChars = Math.floor((w - 60 - indentX) / (fs * 0.6));
+                                  return item.text.length > maxChars ? item.text.slice(0, maxChars) + "…" : (item.text || " ");
+                                })()}
+                              </text>
+                            )}
+                            {/* サブ項目追加ボタン（depth < 2 の時のみ） */}
+                            {!readOnly && depth < 2 && (
+                              <g
+                                transform={`translate(${w / 2 - 36}, ${iy})`}
+                                onMouseDown={e => e.stopPropagation()}
+                                onClick={e => { e.stopPropagation(); addListItem(node.id, item.id); }}
+                                style={{ cursor: "pointer" }}
+                              >
+                                <circle r={9} fill="transparent" />
+                                <text textAnchor="middle" dominantBaseline="central" fontSize={11} fill="#cbd5e1" style={{ pointerEvents: "none" }}>⊕</text>
+                              </g>
+                            )}
+                            {/* 削除ボタン */}
+                            {!readOnly && (
+                              <g
+                                transform={`translate(${w / 2 - 16}, ${iy})`}
+                                onMouseDown={e => e.stopPropagation()}
+                                onClick={e => { e.stopPropagation(); deleteListItem(node.id, item.id); }}
+                                style={{ cursor: "pointer" }}
+                              >
+                                <circle r={9} fill="transparent" />
+                                <text textAnchor="middle" dominantBaseline="central" fontSize={12} fill="#fca5a5" style={{ pointerEvents: "none" }}>🗑</text>
+                              </g>
                             )}
                           </g>
-                          {/* テキスト */}
-                          {!isEditingThis && (
-                            <text
-                              x={-w / 2 + 34} y={iy}
-                              dominantBaseline="central" fontSize={12}
-                              fill={item.checked ? "#94a3b8" : "#334155"}
-                              textDecoration={item.checked ? "line-through" : undefined}
-                              onMouseDown={e => e.stopPropagation()}
-                              onClick={e => { e.stopPropagation(); startEditListItem(node.id, item.id, item.text); }}
-                              style={{ cursor: "text", pointerEvents: "all" }}
-                            >
-                              {item.text.length > 22 ? item.text.slice(0, 22) + "…" : (item.text || "（空）")}
-                            </text>
-                          )}
-                        </g>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                     {/* 項目追加ボタン */}
                     {!node.collapsed && !readOnly && (
                       <g
-                        transform={`translate(${-w / 2 + 18}, ${-h / 2 + LIST_HEADER_H + (node.listItems.length) * LIST_ITEM_H + LIST_ADD_H / 2})`}
+                        transform={`translate(${-w / 2 + 18}, ${-h / 2 + LIST_HEADER_H + countTotalItems(node.listItems) * listItemH(node) + LIST_ADD_H / 2})`}
                         onMouseDown={e => e.stopPropagation()}
                         onClick={e => { e.stopPropagation(); addListItem(node.id); }}
                         style={{ cursor: "pointer" }}
@@ -1271,7 +1382,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                           e.stopPropagation();
                           pushUndo();
                           const cp = toCanvas(e.clientX, e.clientY);
-                          setResizing({ id: node.id, corner, startCx: cp.x, startCy: cp.y, startW: w, startH: h, startNx: node.x, startNy: node.y, isImage: false });
+                          setResizing({ id: node.id, corner, startCx: cp.x, startCy: cp.y, startW: w, startH: h, startNx: node.x, startNy: node.y, isImage: false, startListFontSize: node.listFontSize ?? 12 });
                         }}
                       />
                     ))}

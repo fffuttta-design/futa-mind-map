@@ -2,6 +2,7 @@ export interface ListItem {
   id: string;
   text: string;
   checked: boolean;
+  children?: ListItem[];
 }
 
 export interface MindMapNode {
@@ -30,6 +31,7 @@ export interface MindMapNode {
   checked?: boolean;
   priority?: number;
   listItems?: ListItem[];
+  listFontSize?: number;
 }
 
 // ── LINE モード ──────────────────────────────────────
