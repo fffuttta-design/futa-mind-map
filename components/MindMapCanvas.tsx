@@ -241,6 +241,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   type HistoryState = { nodes: MindMapNode[]; stickyNotes: StickyNote[] };
   const undoStack = useRef<HistoryState[]>([]);
   const redoStack = useRef<HistoryState[]>([]);
+  // ローカル編集タイムスタンプ: Firestoreスナップショットによる上書きを防ぐ
+  const localModifiedAt = useRef<number>(0);
 
   const pushUndo = useCallback(() => {
     undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current] });
@@ -249,9 +251,17 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   }, []);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setNodes(initialNodes); }, [initialNodes]);
+  useEffect(() => {
+    // ローカル編集から2.5秒以内はFirestoreスナップショットで上書きしない
+    // （undo/redo直後に古いスナップショットが届いて状態が逆戻りするのを防ぐ）
+    if (Date.now() - localModifiedAt.current < 2500) return;
+    setNodes(initialNodes);
+  }, [initialNodes]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setStickyNotes(initialStickyNotes ?? []); }, [initialStickyNotes]);
+  useEffect(() => {
+    if (Date.now() - localModifiedAt.current < 2500) return;
+    setStickyNotes(initialStickyNotes ?? []);
+  }, [initialStickyNotes]);
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -347,6 +357,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   const updateNodes = useCallback((updated: MindMapNode[]) => {
     pushUndo();
+    localModifiedAt.current = Date.now();
     setNodes(updated);
     onNodesChange(updated);
   }, [onNodesChange, pushUndo]);
@@ -355,6 +366,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     if (undoStack.current.length === 0) return;
     const prev = undoStack.current.pop()!;
     redoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current] });
+    localModifiedAt.current = Date.now();
     setNodes(prev.nodes);
     onNodesChangeRef.current(prev.nodes);
     setStickyNotes(prev.stickyNotes);
@@ -365,6 +377,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     if (redoStack.current.length === 0) return;
     const next = redoStack.current.pop()!;
     undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current] });
+    localModifiedAt.current = Date.now();
     setNodes(next.nodes);
     onNodesChangeRef.current(next.nodes);
     setStickyNotes(next.stickyNotes);
