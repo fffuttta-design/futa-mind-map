@@ -42,9 +42,10 @@ function nodeWidth(node: MindMapNode): number {
   if (node.imageWidth) return node.imageWidth;
   const maxLineLen = Math.max(...node.text.split("\n").map(l => l.length), 1);
   const base = Math.max(80, Math.min(220, maxLineLen * 8.5 + 48));
-  if (node.shape === "circle") return NODE_H * 2 + 8;
-  if (node.shape === "diamond") return base + 24;
-  return base;
+  const cbPad = node.isCheckbox ? 44 : 0;
+  if (node.shape === "circle") return NODE_H * 2 + 8 + cbPad;
+  if (node.shape === "diamond") return base + 24 + cbPad;
+  return base + cbPad;
 }
 
 function nodeHeight(node: MindMapNode): number {
