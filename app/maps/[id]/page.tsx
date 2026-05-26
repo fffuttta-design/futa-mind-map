@@ -221,7 +221,7 @@ export default function MapEditorPage() {
           <button
             onClick={() => setShowSettings(true)}
             title="アプリ設定"
-            className="absolute bottom-4 right-4 w-8 h-8 rounded-full bg-white/80 hover:bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all backdrop-blur-sm z-10 relative"
+            className="absolute bottom-4 right-4 w-8 h-8 rounded-full bg-white/80 hover:bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all backdrop-blur-sm z-20"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3"/>
