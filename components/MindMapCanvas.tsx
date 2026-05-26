@@ -513,34 +513,14 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds, pushUndo]);
 
-  const alignSelectedLeft   = useCallback(() => applyAlignUpdate(sel => {
-    const edge = Math.min(...sel.map(n => n.x - nodeWidth(n) / 2));
-    return sel.map(n => ({ ...n, x: edge + nodeWidth(n) / 2 }));
-  }), [applyAlignUpdate]);
-
   const alignSelectedCenterH = useCallback(() => applyAlignUpdate(sel => {
     const cx = sel.reduce((s, n) => s + n.x, 0) / sel.length;
     return sel.map(n => ({ ...n, x: cx }));
   }), [applyAlignUpdate]);
 
-  const alignSelectedRight  = useCallback(() => applyAlignUpdate(sel => {
-    const edge = Math.max(...sel.map(n => n.x + nodeWidth(n) / 2));
-    return sel.map(n => ({ ...n, x: edge - nodeWidth(n) / 2 }));
-  }), [applyAlignUpdate]);
-
-  const alignSelectedTop    = useCallback(() => applyAlignUpdate(sel => {
-    const edge = Math.min(...sel.map(n => n.y - nodeHeight(n) / 2));
-    return sel.map(n => ({ ...n, y: edge + nodeHeight(n) / 2 }));
-  }), [applyAlignUpdate]);
-
   const alignSelectedCenterV = useCallback(() => applyAlignUpdate(sel => {
     const cy = sel.reduce((s, n) => s + n.y, 0) / sel.length;
     return sel.map(n => ({ ...n, y: cy }));
-  }), [applyAlignUpdate]);
-
-  const alignSelectedBottom = useCallback(() => applyAlignUpdate(sel => {
-    const edge = Math.max(...sel.map(n => n.y + nodeHeight(n) / 2));
-    return sel.map(n => ({ ...n, y: edge - nodeHeight(n) / 2 }));
   }), [applyAlignUpdate]);
 
   const distributeSelectedH = useCallback(() => applyAlignUpdate(sel => {
@@ -1239,23 +1219,10 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
             {selectedIds.size}個
           </span>
           <div className="w-px h-5 bg-gray-200 mx-0.5" />
-          {/* 横方向揃え */}
+          {/* 中央揃え */}
           {([
-            { label: "⊣", tip: "左揃え",      fn: alignSelectedLeft },
             { label: "⊕", tip: "中央揃え（横）", fn: alignSelectedCenterH },
-            { label: "⊢", tip: "右揃え",      fn: alignSelectedRight },
-          ] as const).map(({ label, tip, fn }) => (
-            <div key={tip} className="relative group">
-              <button onClick={fn} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">{label}</button>
-              <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">{tip}</span>
-            </div>
-          ))}
-          <div className="w-px h-5 bg-gray-200 mx-0.5" />
-          {/* 縦方向揃え */}
-          {([
-            { label: "⊤", tip: "上揃え",      fn: alignSelectedTop },
             { label: "⊗", tip: "中央揃え（縦）", fn: alignSelectedCenterV },
-            { label: "⊥", tip: "下揃え",      fn: alignSelectedBottom },
           ] as const).map(({ label, tip, fn }) => (
             <div key={tip} className="relative group">
               <button onClick={fn} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">{label}</button>
