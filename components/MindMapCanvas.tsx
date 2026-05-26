@@ -32,7 +32,10 @@ const CTX_SHAPES = [
   { id: "diamond", l: "◇" }, { id: "text", l: "T" },
 ] as const;
 const CTX_SIZES = [11, 13, 15, 17] as const;
-const PRIORITY_COLORS: Record<1 | 2 | 3 | 4, string> = { 1: "#ef4444", 2: "#f97316", 3: "#eab308", 4: "#94a3b8" };
+const PRIORITY_COLOR_LIST = ["#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899","#64748b"];
+function priorityColor(p: number): string {
+  return PRIORITY_COLOR_LIST[Math.min(p - 1, PRIORITY_COLOR_LIST.length - 1)];
+}
 const STICKY_COLORS = ["#fef08a", "#fda4af", "#86efac", "#93c5fd", "#d8b4fe", "#fed7aa"] as const;
 const STICKY_DEFAULT_W = 160;
 const STICKY_DEFAULT_H = 120;
@@ -538,6 +541,17 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     const step = (sorted[sorted.length - 1].y - sorted[0].y) / (sorted.length - 1);
     return sorted.map((n, i) => ({ ...n, y: sorted[0].y + i * step }));
   }), [applyAlignUpdate]);
+
+  const matchSelectedSize = useCallback(() => {
+    const sel = nodes.filter(n => selectedIds.has(n.id));
+    if (sel.length < 2) return;
+    const maxW = Math.max(...sel.map(n => nodeWidth(n)));
+    const maxH = Math.max(...sel.map(n => nodeHeight(n)));
+    pushUndo();
+    const updated = nodes.map(n => selectedIds.has(n.id) ? { ...n, customWidth: maxW, customHeight: maxH } : n);
+    setNodes(updated);
+    onNodesChange(updated);
+  }, [nodes, selectedIds, pushUndo, onNodesChange]);
 
   const exportSVG = useCallback(() => {
     const a = document.createElement("a");
@@ -1060,7 +1074,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                     {node.priority && (
                       <g style={{ pointerEvents: "none" }}>
                         <circle cx={-w / 2 + 10} cy={-h / 2 + 10} r={9}
-                          fill={PRIORITY_COLORS[node.priority as 1|2|3|4]} />
+                          fill={priorityColor(node.priority!)} />
                         <text x={-w / 2 + 10} y={-h / 2 + 10}
                           textAnchor="middle" dominantBaseline="central"
                           fontSize={10} fill="white" fontWeight="bold"
@@ -1254,6 +1268,12 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">{tip}</span>
             </div>
           ))}
+          <div className="w-px h-5 bg-gray-200 mx-0.5" />
+          {/* サイズ揃え */}
+          <div className="relative group">
+            <button onClick={matchSelectedSize} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊞</button>
+            <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">最大サイズに揃える</span>
+          </div>
         </div>
       )}
 
@@ -1460,18 +1480,23 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
             <div>
               <p className="text-xs text-gray-400 mb-1">優先度</p>
               <div className="flex gap-1 items-center">
-                {([1, 2, 3, 4] as const).map(p => (
-                  <button
-                    key={p}
-                    onClick={() => applyFormat({ priority: ctxNode.priority === p ? undefined : p })}
-                    className={`w-7 h-7 rounded-full text-xs font-bold transition-all ${ctxNode.priority === p ? "ring-2 ring-offset-1 ring-gray-400 scale-110" : "opacity-75 hover:opacity-100 hover:scale-105"}`}
-                    style={{ backgroundColor: PRIORITY_COLORS[p], color: "white" }}
-                  >{p}</button>
-                ))}
+                <button
+                  onClick={() => applyFormat({ priority: Math.max(1, (ctxNode.priority ?? 1) - 1) === 0 ? undefined : Math.max(1, (ctxNode.priority ?? 2) - 1) })}
+                  disabled={!ctxNode.priority}
+                  className="w-7 h-7 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-30 flex items-center justify-center"
+                >−</button>
+                <div
+                  className="w-8 h-7 rounded-lg text-xs font-bold flex items-center justify-center text-white"
+                  style={{ backgroundColor: ctxNode.priority ? priorityColor(ctxNode.priority) : "#e5e7eb", color: ctxNode.priority ? "white" : "#9ca3af" }}
+                >{ctxNode.priority ?? "−"}</div>
+                <button
+                  onClick={() => applyFormat({ priority: (ctxNode.priority ?? 0) + 1 })}
+                  className="w-7 h-7 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 flex items-center justify-center"
+                >＋</button>
                 {ctxNode.priority && (
                   <button
                     onClick={() => applyFormat({ priority: undefined })}
-                    className="w-6 h-6 rounded-full text-xs border border-gray-200 text-gray-400 hover:bg-gray-50 flex items-center justify-center"
+                    className="w-6 h-6 rounded-full text-xs border border-gray-200 text-gray-400 hover:bg-gray-50 flex items-center justify-center ml-1"
                   >✕</button>
                 )}
               </div>
