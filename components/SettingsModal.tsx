@@ -33,6 +33,7 @@ export default function SettingsModal({ onClose, initialLatestVersion, initialHa
   const handleUpdate = () => {
     // モーダルを先に閉じてから reload（React アンマウント中のエラーフラッシュ防止）
     onClose();
+    sessionStorage.setItem("justUpdated", "1");
     setTimeout(() => window.location.reload(), 150);
   };
 
