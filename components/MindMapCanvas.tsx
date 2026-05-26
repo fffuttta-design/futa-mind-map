@@ -332,12 +332,14 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     });
   }, [editingListItem, nodes, pan, zoom]);
 
+  // itemId が変わった時だけフォーカス＆全選択（text変化のたびに再発動しないよう itemId のみ依存）
   useEffect(() => {
     if (editingListItem && listItemInputRef.current) {
       listItemInputRef.current.focus();
       listItemInputRef.current.select();
     }
-  }, [editingListItem]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingListItem?.itemId]);
 
   useEffect(() => {
     const svg = svgRef.current;
