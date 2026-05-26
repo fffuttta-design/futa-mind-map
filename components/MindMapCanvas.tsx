@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MindMapNode, StickyNote } from "@/types";
+import { MindMapNode, StickyNote, ListItem } from "@/types";
 import NodeToolbar from "./NodeToolbar";
 
 interface Props {
@@ -19,6 +19,10 @@ interface Props {
 }
 
 const NODE_H = 34;
+const LIST_HEADER_H = 36;
+const LIST_ITEM_H = 28;
+const LIST_ADD_H = 30;
+const LIST_MIN_W = 240;
 const LINE_H = 20;
 const TEXT_PAD = 16;
 
@@ -42,6 +46,7 @@ const STICKY_DEFAULT_H = 120;
 
 function nodeWidth(node: MindMapNode): number {
   if (node.customWidth) return node.customWidth;
+  if (node.listItems) return LIST_MIN_W;
   if (node.imageWidth) return node.imageWidth;
   const maxLineLen = Math.max(...node.text.split("\n").map(l => l.length), 1);
   const base = Math.max(80, Math.min(220, maxLineLen * 8.5 + 48));
@@ -53,6 +58,10 @@ function nodeWidth(node: MindMapNode): number {
 
 function nodeHeight(node: MindMapNode): number {
   if (node.customHeight) return node.customHeight;
+  if (node.listItems) {
+    if (node.collapsed) return LIST_HEADER_H;
+    return LIST_HEADER_H + node.listItems.length * LIST_ITEM_H + LIST_ADD_H;
+  }
   if (node.imageHeight) return node.imageHeight;
   if (node.shape === "circle") return NODE_H * 2 + 8;
   if (node.shape === "diamond") return NODE_H + 16;
@@ -187,10 +196,13 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const [draggingSticky, setDraggingSticky] = useState<{ id: string; startCx: number; startCy: number; initX: number; initY: number } | null>(null);
   const [stickyCtxMenu, setStickyCtxMenu] = useState<{ id: string; sx: number; sy: number } | null>(null);
   const [stickyEditorStyle, setStickyEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [editingListItem, setEditingListItem] = useState<{ nodeId: string; itemId: string; text: string } | null>(null);
+  const [listItemEditorStyle, setListItemEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickyInputRef = useRef<HTMLTextAreaElement>(null);
+  const listItemInputRef = useRef<HTMLInputElement>(null);
   const cancelEditRef = useRef(false);
   const copiedNodeRef = useRef<MindMapNode | null>(null);
   const ctxMenuDragRef = useRef<{ startMx: number; startMy: number; startSx: number; startSy: number } | null>(null);
@@ -273,13 +285,49 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       const sx = r.width / 2 + pan.x + node.x * zoom;
       const sy = r.height / 2 + pan.y + node.y * zoom;
       const w = nodeWidth(node) * zoom;
-      const lineCount = Math.max(1, editText.split("\n").length);
-      const h = Math.max(NODE_H, lineCount * LINE_H + TEXT_PAD) * zoom;
-      setEditorStyle({ left: sx - w / 2, top: sy - h / 2, width: w, height: h, fontSize: (node.fontSize ?? 13) * zoom });
+      if (node.listItems) {
+        // リストノードはヘッダー部分のみ
+        const nodeTop = sy - (nodeHeight(node) / 2) * zoom;
+        setEditorStyle({ left: sx - w / 2 + 30 * zoom, top: nodeTop, width: w * 0.65, height: LIST_HEADER_H * zoom, fontSize: 13 * zoom });
+      } else {
+        const lineCount = Math.max(1, editText.split("\n").length);
+        const h = Math.max(NODE_H, lineCount * LINE_H + TEXT_PAD) * zoom;
+        setEditorStyle({ left: sx - w / 2, top: sy - h / 2, width: w, height: h, fontSize: (node.fontSize ?? 13) * zoom });
+      }
     } else {
       setEditorStyle(null);
     }
   }, [editingId, nodes, pan, zoom, editText]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !editingListItem) { setListItemEditorStyle(null); return; }
+    const node = nodes.find(n => n.id === editingListItem.nodeId);
+    if (!node?.listItems) { setListItemEditorStyle(null); return; }
+    const itemIdx = node.listItems.findIndex(it => it.id === editingListItem.itemId);
+    if (itemIdx === -1) { setListItemEditorStyle(null); return; }
+    const w = nodeWidth(node);
+    const h = nodeHeight(node);
+    const r = svg.getBoundingClientRect();
+    const nodeScreenX = r.width / 2 + pan.x + node.x * zoom;
+    const nodeScreenY = r.height / 2 + pan.y + node.y * zoom;
+    const itemRelY = -h / 2 + LIST_HEADER_H + itemIdx * LIST_ITEM_H + LIST_ITEM_H / 2;
+    const itemScreenX = nodeScreenX + (-w / 2 + 36) * zoom;
+    const itemScreenY = nodeScreenY + itemRelY * zoom;
+    setListItemEditorStyle({
+      left: itemScreenX,
+      top: itemScreenY - (LIST_ITEM_H * zoom) / 2,
+      width: (w - 44) * zoom,
+      height: LIST_ITEM_H * zoom,
+    });
+  }, [editingListItem, nodes, pan, zoom]);
+
+  useEffect(() => {
+    if (editingListItem && listItemInputRef.current) {
+      listItemInputRef.current.focus();
+      listItemInputRef.current.select();
+    }
+  }, [editingListItem]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -568,6 +616,67 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setNodes(updated);
     onNodesChange(updated);
   }, [nodes, selectedIds, pushUndo, onNodesChange]);
+
+  const toggleListItemChecked = useCallback((nodeId: string, itemId: string) => {
+    const updated = nodesRef.current.map(n =>
+      n.id === nodeId
+        ? { ...n, listItems: n.listItems?.map(it => it.id === itemId ? { ...it, checked: !it.checked } : it) }
+        : n
+    );
+    setNodes(updated);
+    onNodesChangeRef.current(updated);
+  }, []);
+
+  const startEditListItem = useCallback((nodeId: string, itemId: string, text: string) => {
+    setEditingListItem({ nodeId, itemId, text });
+  }, []);
+
+  const commitListItemEdit = useCallback(() => {
+    if (!editingListItem) return;
+    const { nodeId, itemId, text } = editingListItem;
+    const updated = nodesRef.current.map(n => {
+      if (n.id !== nodeId) return n;
+      if (text.trim() === "") {
+        return { ...n, listItems: n.listItems?.filter(it => it.id !== itemId) };
+      }
+      return { ...n, listItems: n.listItems?.map(it => it.id === itemId ? { ...it, text } : it) };
+    });
+    setNodes(updated);
+    onNodesChangeRef.current(updated);
+    setEditingListItem(null);
+  }, [editingListItem]);
+
+  const addListItem = useCallback((nodeId: string) => {
+    const newItem: ListItem = { id: `li-${Date.now()}`, text: "", checked: false };
+    const updated = nodesRef.current.map(n =>
+      n.id === nodeId ? { ...n, listItems: [...(n.listItems ?? []), newItem] } : n
+    );
+    setNodes(updated);
+    onNodesChangeRef.current(updated);
+    setTimeout(() => setEditingListItem({ nodeId, itemId: newItem.id, text: "" }), 30);
+  }, []);
+
+  const deleteListItem = useCallback((nodeId: string, itemId: string) => {
+    pushUndo();
+    const updated = nodesRef.current.map(n =>
+      n.id === nodeId ? { ...n, listItems: n.listItems?.filter(it => it.id !== itemId) } : n
+    );
+    setNodes(updated);
+    onNodesChangeRef.current(updated);
+  }, [pushUndo]);
+
+  const convertToList = useCallback((nodeId: string) => {
+    pushUndo();
+    const updated = nodesRef.current.map(n => {
+      if (n.id !== nodeId) return n;
+      return {
+        ...n,
+        listItems: [{ id: `li-${Date.now()}`, text: n.text, checked: false }],
+      };
+    });
+    setNodes(updated);
+    onNodesChangeRef.current(updated);
+  }, [pushUndo]);
 
   const exportSVG = useCallback(() => {
     const a = document.createElement("a");
@@ -1016,7 +1125,138 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                 }}
                 style={{ cursor: readOnly ? "default" : "pointer" }}
               >
-                {isImageNode ? (
+                {node.listItems ? (
+                  // ── コンテナ（リスト）ノード ──
+                  <>
+                    {/* 全体背景 */}
+                    <rect
+                      x={-w / 2} y={-h / 2} width={w} height={h} rx={8}
+                      fill="white"
+                      stroke={isSelected ? "#6366f1" : "#e2e8f0"}
+                      strokeWidth={isSelected ? 2 : 1}
+                    />
+                    {/* ヘッダー背景（角丸は上のみ） */}
+                    <rect x={-w / 2} y={-h / 2} width={w} height={LIST_HEADER_H} rx={8} fill={node.color} />
+                    <rect x={-w / 2} y={-h / 2 + LIST_HEADER_H - 8} width={w} height={8} fill={node.color} />
+                    {/* 折りたたみトグル */}
+                    <g
+                      transform={`translate(${-w / 2 + 16}, ${-h / 2 + LIST_HEADER_H / 2})`}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => {
+                        e.stopPropagation();
+                        const upd = nodesRef.current.map(n => n.id === node.id ? { ...n, collapsed: !n.collapsed } : n);
+                        setNodes(upd); onNodesChangeRef.current(upd);
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <circle r={8} fill="rgba(255,255,255,0.2)" />
+                      <text textAnchor="middle" dominantBaseline="central" fontSize={9} fill="white" style={{ pointerEvents: "none" }}>
+                        {node.collapsed ? "▶" : "▼"}
+                      </text>
+                    </g>
+                    {/* タイトル（ダブルクリックで編集） */}
+                    {editingId !== node.id && (
+                      <text
+                        x={-w / 2 + 32} y={-h / 2 + LIST_HEADER_H / 2}
+                        dominantBaseline="central" fontSize={13} fontWeight="600" fill="white"
+                        style={{ pointerEvents: "none" }}
+                      >
+                        {node.text.length > 18 ? node.text.slice(0, 18) + "…" : node.text}
+                      </text>
+                    )}
+                    {/* 進捗 */}
+                    {!node.collapsed && node.listItems.length > 0 && (() => {
+                      const done = node.listItems.filter(it => it.checked).length;
+                      return (
+                        <text
+                          x={w / 2 - 10} y={-h / 2 + LIST_HEADER_H / 2}
+                          textAnchor="end" dominantBaseline="central"
+                          fontSize={11} fill="rgba(255,255,255,0.85)"
+                          style={{ pointerEvents: "none" }}
+                        >{done}/{node.listItems.length}</text>
+                      );
+                    })()}
+                    {/* アイテム行 */}
+                    {!node.collapsed && node.listItems.map((item, idx) => {
+                      const iy = -h / 2 + LIST_HEADER_H + idx * LIST_ITEM_H + LIST_ITEM_H / 2;
+                      const isEditingThis = editingListItem?.nodeId === node.id && editingListItem?.itemId === item.id;
+                      return (
+                        <g key={item.id}>
+                          {/* ホバー背景 */}
+                          <rect x={-w / 2 + 1} y={iy - LIST_ITEM_H / 2} width={w - 2} height={LIST_ITEM_H} fill="transparent" />
+                          {/* チェックボックス */}
+                          <g
+                            transform={`translate(${-w / 2 + 18}, ${iy})`}
+                            onMouseDown={e => e.stopPropagation()}
+                            onClick={e => { e.stopPropagation(); toggleListItemChecked(node.id, item.id); }}
+                            style={{ cursor: "pointer" }}
+                          >
+                            <rect x={-7} y={-7} width={14} height={14} rx={3}
+                              fill={item.checked ? "#10b981" : "white"}
+                              stroke={item.checked ? "#10b981" : "#cbd5e1"}
+                              strokeWidth={1.5}
+                            />
+                            {item.checked && (
+                              <text textAnchor="middle" dominantBaseline="central" fontSize={10} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>✓</text>
+                            )}
+                          </g>
+                          {/* テキスト */}
+                          {!isEditingThis && (
+                            <text
+                              x={-w / 2 + 34} y={iy}
+                              dominantBaseline="central" fontSize={12}
+                              fill={item.checked ? "#94a3b8" : "#334155"}
+                              textDecoration={item.checked ? "line-through" : undefined}
+                              onMouseDown={e => e.stopPropagation()}
+                              onClick={e => { e.stopPropagation(); startEditListItem(node.id, item.id, item.text); }}
+                              style={{ cursor: "text", pointerEvents: "all" }}
+                            >
+                              {item.text.length > 22 ? item.text.slice(0, 22) + "…" : (item.text || "（空）")}
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })}
+                    {/* 項目追加ボタン */}
+                    {!node.collapsed && !readOnly && (
+                      <g
+                        transform={`translate(${-w / 2 + 18}, ${-h / 2 + LIST_HEADER_H + (node.listItems.length) * LIST_ITEM_H + LIST_ADD_H / 2})`}
+                        onMouseDown={e => e.stopPropagation()}
+                        onClick={e => { e.stopPropagation(); addListItem(node.id); }}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <text dominantBaseline="central" fontSize={12} fill="#94a3b8">＋ 項目を追加</text>
+                      </g>
+                    )}
+                    {/* 優先度バッジ */}
+                    {node.priority && (
+                      <g style={{ pointerEvents: "none" }}>
+                        <circle cx={-w / 2 + 10} cy={-h / 2 + 10} r={9} fill={PRIORITY_COLOR} />
+                        <text x={-w / 2 + 10} y={-h / 2 + 10} textAnchor="middle" dominantBaseline="central"
+                          fontSize={10} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>
+                          {node.priority}
+                        </text>
+                      </g>
+                    )}
+                    {/* リサイズハンドル */}
+                    {isSelected && !readOnly && !editingId && (
+                      [["se", w / 2, h / 2], ["sw", -w / 2, h / 2], ["ne", w / 2, -h / 2], ["nw", -w / 2, -h / 2]] as ["se" | "sw" | "ne" | "nw", number, number][]
+                    ).map(([corner, hx, hy]) => (
+                      <rect
+                        key={`resize-${corner}`}
+                        x={hx - 5} y={hy - 5} width={10} height={10}
+                        fill="white" stroke="#6366f1" strokeWidth={1.5} rx={2}
+                        style={{ cursor: (corner === "se" || corner === "nw") ? "nwse-resize" : "nesw-resize", pointerEvents: "all" }}
+                        onMouseDown={e => {
+                          e.stopPropagation();
+                          pushUndo();
+                          const cp = toCanvas(e.clientX, e.clientY);
+                          setResizing({ id: node.id, corner, startCx: cp.x, startCy: cp.y, startW: w, startH: h, startNx: node.x, startNy: node.y, isImage: false });
+                        }}
+                      />
+                    ))}
+                  </>
+                ) : isImageNode ? (
                   <>
                     <rect x={-w / 2} y={-h / 2} width={w} height={h} fill="transparent" />
                     <image href={node.imageUrl} x={-w / 2} y={-h / 2} width={w} height={h} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: "none" }} />
@@ -1333,6 +1573,38 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         />
       )}
 
+      {/* リストアイテム インライン編集 */}
+      {!readOnly && editingListItem && listItemEditorStyle && (
+        <input
+          ref={listItemInputRef}
+          type="text"
+          value={editingListItem.text}
+          onChange={e => setEditingListItem(prev => prev ? { ...prev, text: e.target.value } : null)}
+          onBlur={commitListItemEdit}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === "Enter") { e.preventDefault(); commitListItemEdit(); }
+            if (e.key === "Escape") { setEditingListItem(null); }
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          placeholder="アイテムを入力..."
+          style={{
+            position: "absolute",
+            left: listItemEditorStyle.left,
+            top: listItemEditorStyle.top,
+            width: listItemEditorStyle.width,
+            height: listItemEditorStyle.height,
+            fontSize: 12 * zoom,
+            lineHeight: 1.4,
+            padding: "0 4px",
+            background: "transparent",
+            border: "none",
+            outline: "none",
+            color: "#334155",
+          }}
+        />
+      )}
+
       {!readOnly && selectedId && toolbarPos && !editingId && !nodes.find(n => n.id === selectedId)?.imageWidth && (
         <NodeToolbar
           node={nodes.find(n => n.id === selectedId)!}
@@ -1538,6 +1810,30 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                 )}
               </div>
             </div>
+          )}
+
+          {/* リスト変換 */}
+          {!ctxNode.listItems && (
+            <button
+              onClick={() => { convertToList(nodeCtxMenu!.nodeId); setNodeCtxMenu(null); }}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+            >
+              <span>📋</span><span>リストに変換</span>
+            </button>
+          )}
+          {ctxNode.listItems && (
+            <button
+              onClick={() => {
+                pushUndo();
+                const title = ctxNode.listItems!.find(it => !it.checked)?.text ?? ctxNode.text;
+                const upd = nodesRef.current.map(n => n.id === ctxNode.id ? { ...n, listItems: undefined } : n);
+                setNodes(upd); onNodesChangeRef.current(upd);
+                setNodeCtxMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+            >
+              <span>↩️</span><span>通常ノードに戻す</span>
+            </button>
           )}
 
           {/* 形 */}

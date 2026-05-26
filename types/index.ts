@@ -1,3 +1,9 @@
+export interface ListItem {
+  id: string;
+  text: string;
+  checked: boolean;
+}
+
 export interface MindMapNode {
   id: string;
   text: string;
@@ -23,6 +29,7 @@ export interface MindMapNode {
   isCheckbox?: boolean;
   checked?: boolean;
   priority?: number;
+  listItems?: ListItem[];
 }
 
 // ── LINE モード ──────────────────────────────────────
