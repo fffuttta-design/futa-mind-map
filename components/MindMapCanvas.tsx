@@ -62,7 +62,7 @@ function calcEdgePoints(parent: MindMapNode, child: MindMapNode) {
   const cw = nodeWidth(child), ch = nodeHeight(child);
   const dx = child.x - parent.x;
   const dy = child.y - parent.y;
-  if (Math.abs(dx) >= Math.abs(dy)) {
+  if (Math.abs(dx) * 2 >= Math.abs(dy)) {
     return dx >= 0
       ? { x1: parent.x + pw / 2, y1: parent.y,  x2: child.x - cw / 2, y2: child.y,  v: false }
       : { x1: parent.x - pw / 2, y1: parent.y,  x2: child.x + cw / 2, y2: child.y,  v: false };
@@ -189,6 +189,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const stickyInputRef = useRef<HTMLTextAreaElement>(null);
   const cancelEditRef = useRef(false);
   const copiedNodeRef = useRef<MindMapNode | null>(null);
+  const ctxMenuDragRef = useRef<{ startMx: number; startMy: number; startSx: number; startSy: number } | null>(null);
 
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null;
 
@@ -672,6 +673,12 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       return { x: (cx - r.left - p.x - r.width / 2) / z, y: (cy - r.top - p.y - r.height / 2) / z };
     };
     const onMove = (e: MouseEvent) => {
+      // 右クリックメニュードラッグ
+      if (ctxMenuDragRef.current) {
+        const d = ctxMenuDragRef.current;
+        setNodeCtxMenu(prev => prev ? { ...prev, sx: d.startSx + e.clientX - d.startMx, sy: d.startSy + e.clientY - d.startMy } : null);
+        return;
+      }
       // ラバーバンド更新
       if (rubberBandRef.current) {
         const cp = getCanvasPos(e.clientX, e.clientY);
@@ -751,6 +758,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       }
     };
     const onUp = (e: MouseEvent) => {
+      if (ctxMenuDragRef.current) { ctxMenuDragRef.current = null; return; }
       if (draggingStickyRef.current) {
         onStickyNotesChangeRef.current?.(stickyNotesRef.current);
         setDraggingSticky(null);
@@ -968,7 +976,12 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                   if (!svg) return;
                   const r = svg.getBoundingClientRect();
                   if (!selectedIds.has(node.id)) setSelectedIds(new Set([node.id]));
-                  setNodeCtxMenu({ nodeId: node.id, sx: e.clientX - r.left, sy: e.clientY - r.top });
+                  const MENU_W = 244, MENU_H = 440;
+                  const rawSx = e.clientX - r.left;
+                  const rawSy = e.clientY - r.top;
+                  const clampedSx = Math.min(Math.max(8, rawSx), (svgRef.current?.clientWidth ?? 800) - MENU_W - 8);
+                  const clampedSy = Math.min(Math.max(8, rawSy), (svgRef.current?.clientHeight ?? 600) - MENU_H - 8);
+                  setNodeCtxMenu({ nodeId: node.id, sx: clampedSx, sy: clampedSy });
                 }}
                 style={{ cursor: readOnly ? "default" : "pointer" }}
               >
@@ -1418,11 +1431,22 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       {/* 改修②: ノード右クリックメニュー（書式コントロール横並び + アクション）*/}
       {!readOnly && nodeCtxMenu && ctxNode && (
         <div
-          className="absolute z-50 bg-white rounded-xl shadow-lg border border-gray-100 p-3 flex flex-col gap-2.5"
+          className="absolute z-50 bg-white rounded-xl shadow-lg border border-gray-100 flex flex-col"
           style={{ left: nodeCtxMenu.sx, top: nodeCtxMenu.sy, minWidth: 228 }}
           onMouseDown={e => e.stopPropagation()}
           onContextMenu={e => e.preventDefault()}
         >
+          {/* ドラッグハンドル */}
+          <div
+            className="flex items-center justify-center py-1.5 cursor-grab active:cursor-grabbing rounded-t-xl border-b border-gray-100 bg-gray-50 hover:bg-gray-100 shrink-0"
+            onMouseDown={e => {
+              e.stopPropagation();
+              ctxMenuDragRef.current = { startMx: e.clientX, startMy: e.clientY, startSx: nodeCtxMenu.sx, startSy: nodeCtxMenu.sy };
+            }}
+          >
+            <div className="w-8 h-1 rounded-full bg-gray-300" />
+          </div>
+          <div className="p-3 flex flex-col gap-2.5 overflow-y-auto" style={{ maxHeight: "70vh" }}>
           {/* 複数選択表示 */}
           {isBatch && (
             <div className="text-xs text-indigo-600 font-semibold bg-indigo-50 rounded-lg px-2 py-1">
@@ -1538,6 +1562,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               🗑️ {isBatch ? `${selectedIds.size}個を削除` : "削除"}
             </button>
           </div>
+          </div>{/* /scroll */}
         </div>
       )}
     </div>
