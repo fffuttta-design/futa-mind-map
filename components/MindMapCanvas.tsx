@@ -835,7 +835,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     onNodesChangeRef.current(updated);
   }, [pushUndo]);
 
-  const convertToList = useCallback((nodeId: string) => {
+  const convertToList = useCallback((nodeId: string, listType: "checkbox" | "numbered" | "bullet" = "checkbox") => {
     pushUndo();
     const updated = nodesRef.current.map(n => {
       if (n.id !== nodeId) return n;
@@ -845,6 +845,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         customWidth: undefined,
         customHeight: undefined,
         listItems: [{ id: `li-${Date.now()}`, text: n.text, checked: false }],
+        listType,
       };
     });
     setNodes(updated);
@@ -1497,7 +1498,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                       </text>
                     )}
                     {/* 進捗 */}
-                    {!node.collapsed && node.listItems.length > 0 && (() => {
+                    {!node.collapsed && node.listItems.length > 0 && (node.listType ?? "checkbox") === "checkbox" && (() => {
                       const all = flattenListItems(node.listItems);
                       const done = all.filter(f => f.item.checked).length;
                       return (
@@ -1530,10 +1531,30 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                       const lih = listItemH(node);
                       const fs = node.listFontSize ?? 12;
                       const flattened = flattenListItems(node.listItems);
+                      // 番号付きリスト用: 深さ別カウンタを事前計算
+                      const lt = node.listType ?? "checkbox";
+                      const depthCtrs = new Array(10).fill(0);
+                      let lastD = -1;
+                      const itemLabels = flattened.map(({ depth }) => {
+                        if (depth < lastD) for (let d = depth + 1; d <= lastD; d++) depthCtrs[d] = 0;
+                        depthCtrs[depth]++;
+                        lastD = depth;
+                        if (lt === "numbered") {
+                          if (depth === 0) return `${depthCtrs[0]}.`;
+                          if (depth === 1) return `${String.fromCharCode(96 + ((depthCtrs[1] - 1) % 26) + 1)}.`;
+                          return "‣";
+                        }
+                        if (lt === "bullet") {
+                          return depth === 0 ? "●" : depth === 1 ? "◦" : "‣";
+                        }
+                        return ""; // checkbox は別途描画
+                      });
+
                       return flattened.map(({ item, depth }, flatIdx) => {
                         const iy = -h / 2 + LIST_HEADER_H + flatIdx * lih + lih / 2;
                         const indentX = depth * 16;
                         const isEditingThis = editingListItem?.nodeId === node.id && editingListItem?.itemId === item.id;
+                        const isCheckboxMode = lt === "checkbox";
                         return (
                           <g key={item.id}>
                             <rect x={-w / 2 + 1} y={iy - lih / 2} width={w - 2} height={lih} fill="transparent" />
@@ -1545,22 +1566,33 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                                 stroke="#e2e8f0" strokeWidth={1} style={{ pointerEvents: "none" }}
                               />
                             )}
-                            {/* チェックボックス */}
-                            <g
-                              transform={`translate(${-w / 2 + 18 + indentX}, ${iy})`}
-                              onMouseDown={e => e.stopPropagation()}
-                              onClick={e => { e.stopPropagation(); toggleListItemChecked(node.id, item.id); }}
-                              style={{ cursor: "pointer" }}
-                            >
-                              <rect x={-7} y={-7} width={14} height={14} rx={3}
-                                fill={item.checked ? "#10b981" : "white"}
-                                stroke={item.checked ? "#10b981" : "#cbd5e1"}
-                                strokeWidth={1.5}
-                              />
-                              {item.checked && (
-                                <text textAnchor="middle" dominantBaseline="central" fontSize={10} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>✓</text>
-                              )}
-                            </g>
+                            {/* マーカー（チェックボックス / 番号 / 黒丸） */}
+                            {isCheckboxMode ? (
+                              <g
+                                transform={`translate(${-w / 2 + 18 + indentX}, ${iy})`}
+                                onMouseDown={e => e.stopPropagation()}
+                                onClick={e => { e.stopPropagation(); toggleListItemChecked(node.id, item.id); }}
+                                style={{ cursor: "pointer" }}
+                              >
+                                <rect x={-7} y={-7} width={14} height={14} rx={3}
+                                  fill={item.checked ? "#10b981" : "white"}
+                                  stroke={item.checked ? "#10b981" : "#cbd5e1"}
+                                  strokeWidth={1.5}
+                                />
+                                {item.checked && (
+                                  <text textAnchor="middle" dominantBaseline="central" fontSize={10} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>✓</text>
+                                )}
+                              </g>
+                            ) : (
+                              <text
+                                x={-w / 2 + 18 + indentX} y={iy}
+                                textAnchor="middle" dominantBaseline="central"
+                                fontSize={lt === "numbered" ? fs - 1 : (depth === 0 ? fs - 1 : fs - 2)}
+                                fontWeight={lt === "numbered" ? "600" : "normal"}
+                                fill={lt === "numbered" ? node.color : (depth === 0 ? "#475569" : "#94a3b8")}
+                                style={{ pointerEvents: "none" }}
+                              >{itemLabels[flatIdx]}</text>
+                            )}
                             {/* テキスト（空の場合も透明rectで広いクリック領域を確保） */}
                             {!isEditingThis && (
                               <>
@@ -1576,9 +1608,11 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                                 <text
                                   x={-w / 2 + 34 + indentX} y={iy}
                                   dominantBaseline="central" fontSize={fs}
-                                  fill={item.text ? (item.checked ? "#94a3b8" : "#334155") : "#cbd5e1"}
+                                  fill={item.text
+                                    ? (isCheckboxMode && item.checked ? "#94a3b8" : "#334155")
+                                    : "#cbd5e1"}
                                   fontStyle={item.text ? "normal" : "italic"}
-                                  textDecoration={item.checked && item.text ? "line-through" : undefined}
+                                  textDecoration={isCheckboxMode && item.checked && item.text ? "line-through" : undefined}
                                   style={{ pointerEvents: "none" }}
                                 >
                                   {(() => {
@@ -2294,26 +2328,60 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
           {/* リスト変換 */}
           {!ctxNode.listItems && (
-            <button
-              onClick={() => { convertToList(nodeCtxMenu!.nodeId); setNodeCtxMenu(null); }}
-              className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-            >
-              <span>📋</span><span>リストに変換</span>
-            </button>
+            <div>
+              <p className="text-xs text-gray-400 mb-1 px-1">リストに変換</p>
+              <div className="flex gap-1">
+                {([
+                  { type: "checkbox" as const, label: "☑", title: "チェック" },
+                  { type: "numbered"  as const, label: "1.", title: "番号付き" },
+                  { type: "bullet"    as const, label: "●", title: "箇条書き" },
+                ]).map(opt => (
+                  <button
+                    key={opt.type}
+                    title={opt.title}
+                    onClick={() => { convertToList(nodeCtxMenu!.nodeId, opt.type); setNodeCtxMenu(null); }}
+                    className="flex-1 h-8 rounded-lg border border-gray-200 text-sm text-gray-600 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                  >{opt.label} {opt.title}</button>
+                ))}
+              </div>
+            </div>
           )}
           {ctxNode.listItems && (
-            <button
-              onClick={() => {
-                pushUndo();
-                const title = ctxNode.listItems!.find(it => !it.checked)?.text ?? ctxNode.text;
-                const upd = nodesRef.current.map(n => n.id === ctxNode.id ? { ...n, listItems: undefined } : n);
-                setNodes(upd); onNodesChangeRef.current(upd);
-                setNodeCtxMenu(null);
-              }}
-              className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-            >
-              <span>↩️</span><span>通常ノードに戻す</span>
-            </button>
+            <>
+              {/* リストタイプ切り替え */}
+              <div>
+                <p className="text-xs text-gray-400 mb-1 px-1">リストタイプ</p>
+                <div className="flex gap-1">
+                  {([
+                    { type: "checkbox" as const, label: "☑", title: "チェック" },
+                    { type: "numbered"  as const, label: "1.", title: "番号" },
+                    { type: "bullet"    as const, label: "●", title: "箇条書き" },
+                  ]).map(opt => (
+                    <button
+                      key={opt.type}
+                      title={opt.title}
+                      onClick={() => applyFormat({ listType: opt.type })}
+                      className={`flex-1 h-7 rounded border text-sm transition-colors ${
+                        (ctxNode.listType ?? "checkbox") === opt.type
+                          ? "border-indigo-400 bg-indigo-50 text-indigo-600"
+                          : "border-gray-200 text-gray-500 hover:border-gray-300"
+                      }`}
+                    >{opt.label}</button>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  pushUndo();
+                  const upd = nodesRef.current.map(n => n.id === ctxNode.id ? { ...n, listItems: undefined, listType: undefined } : n);
+                  setNodes(upd); onNodesChangeRef.current(upd);
+                  setNodeCtxMenu(null);
+                }}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+              >
+                <span>↩️</span><span>通常ノードに戻す</span>
+              </button>
+            </>
           )}
 
           {/* 形 */}

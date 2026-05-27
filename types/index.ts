@@ -32,6 +32,7 @@ export interface MindMapNode {
   priority?: number;
   listItems?: ListItem[];
   listFontSize?: number;
+  listType?: "checkbox" | "numbered" | "bullet";
 }
 
 // ── LINE モード ──────────────────────────────────────
