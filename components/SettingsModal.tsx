@@ -8,15 +8,18 @@ interface Props {
   /** 起動時の自動チェック結果を渡す（バッジ→モーダル連携用） */
   initialLatestVersion?: string | null;
   initialHasUpdate?: boolean;
+  /** リロード前に呼ぶ保存フラッシュ（未保存データ消失を防ぐ） */
+  onBeforeReload?: () => Promise<void>;
 }
 
 type CheckState = "idle" | "checking" | "latest" | "update-available";
 
-export default function SettingsModal({ onClose, initialLatestVersion, initialHasUpdate }: Props) {
+export default function SettingsModal({ onClose, initialLatestVersion, initialHasUpdate, onBeforeReload }: Props) {
   const [checkState, setCheckState] = useState<CheckState>(
     initialHasUpdate ? "update-available" : "idle"
   );
   const [latestVersion, setLatestVersion] = useState<string | null>(initialLatestVersion ?? null);
+  const [reloading, setReloading] = useState(false);
 
   const handleCheckVersion = async () => {
     setCheckState("checking");
@@ -30,12 +33,16 @@ export default function SettingsModal({ onClose, initialLatestVersion, initialHa
     }
   };
 
-  const handleUpdate = () => {
-    // モーダルを先に閉じてから reload（React アンマウント中のエラーフラッシュ防止）
-    onClose();
-    sessionStorage.setItem("justUpdated", "1");
-    setTimeout(() => window.location.reload(), 150);
+  const doReload = async (withJustUpdated = false) => {
+    if (reloading) return;
+    setReloading(true);
+    // 未保存データを先にフラッシュしてからリロード
+    try { await onBeforeReload?.(); } catch { /* ignore */ }
+    if (withJustUpdated) sessionStorage.setItem("justUpdated", "1");
+    window.location.reload();
   };
+
+  const handleUpdate = () => doReload(true);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={onClose}>
@@ -101,8 +108,9 @@ export default function SettingsModal({ onClose, initialLatestVersion, initialHa
         <div className="px-6 pb-5 border-t border-gray-100 pt-5">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">アプリ操作</p>
           <button
-            onClick={() => { onClose(); setTimeout(() => window.location.reload(), 150); }}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-600 text-sm font-medium transition-colors border border-gray-200"
+            onClick={() => doReload(false)}
+            disabled={reloading}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-600 text-sm font-medium transition-colors border border-gray-200 disabled:opacity-50"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>

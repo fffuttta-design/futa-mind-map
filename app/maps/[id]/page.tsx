@@ -51,6 +51,12 @@ export default function MapEditorPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<{ exportSVG: () => void; exportPNG: () => void } | null>(null);
   const lastHistorySave = useRef<number>(0);
+  // 保存待ちデータを種類別に蓄積（タイマーが上書きされても消えないよう）
+  const pendingSave = useRef<{
+    nodes?: MindMapNode[];
+    stickyNotes?: StickyNote[];
+    areas?: CanvasArea[];
+  }>({});
 
   useEffect(() => {
     if (!loading && !user) router.push("/");
@@ -81,31 +87,39 @@ export default function MapEditorPage() {
     return unsub;
   }, [id]);
 
-  const saveNodes = useCallback((nodes: MindMapNode[]) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      const now = Date.now();
-      await updateDoc(doc(db, "maps", id), { nodes, updatedAt: now });
-      if (now - lastHistorySave.current >= 60 * 1000) {
-        lastHistorySave.current = now;
-        await addDoc(collection(db, "maps", id, "history"), { nodes, savedAt: now });
-      }
-    }, 800);
+  // pending に溜め込んで一括フラッシュ（タイマー共有でデータが消えるバグを防止）
+  const flushSaves = useCallback(async () => {
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    const p = pendingSave.current;
+    if (Object.keys(p).length === 0) return;
+    pendingSave.current = {};
+    const now = Date.now();
+    await updateDoc(doc(db, "maps", id), { ...p, updatedAt: now });
+    if (p.nodes && now - lastHistorySave.current >= 60 * 1000) {
+      lastHistorySave.current = now;
+      await addDoc(collection(db, "maps", id, "history"), { nodes: p.nodes, savedAt: now });
+    }
   }, [id]);
+
+  const scheduleSave = useCallback(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => flushSaves(), 800);
+  }, [flushSaves]);
+
+  const saveNodes = useCallback((nodes: MindMapNode[]) => {
+    pendingSave.current = { ...pendingSave.current, nodes };
+    scheduleSave();
+  }, [scheduleSave]);
 
   const saveStickyNotes = useCallback((stickyNotes: StickyNote[]) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      await updateDoc(doc(db, "maps", id), { stickyNotes, updatedAt: Date.now() });
-    }, 800);
-  }, [id]);
+    pendingSave.current = { ...pendingSave.current, stickyNotes };
+    scheduleSave();
+  }, [scheduleSave]);
 
   const saveAreas = useCallback((areas: CanvasArea[]) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      await updateDoc(doc(db, "maps", id), { areas, updatedAt: Date.now() });
-    }, 800);
-  }, [id]);
+    pendingSave.current = { ...pendingSave.current, areas };
+    scheduleSave();
+  }, [scheduleSave]);
 
   const saveTitle = async (newTitle: string) => {
     await updateDoc(doc(db, "maps", id), { title: newTitle, updatedAt: Date.now() });
@@ -382,6 +396,7 @@ export default function MapEditorPage() {
           onClose={() => setShowSettings(false)}
           initialHasUpdate={hasUpdate}
           initialLatestVersion={latestVersion}
+          onBeforeReload={flushSaves}
         />
       )}
 
