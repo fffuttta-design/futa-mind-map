@@ -97,8 +97,23 @@ export default function SettingsModal({ onClose, initialLatestVersion, initialHa
           </div>
         </div>
 
+        {/* 再起動 */}
+        <div className="px-6 pb-5 border-t border-gray-100 pt-5">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">アプリ操作</p>
+          <button
+            onClick={() => { onClose(); setTimeout(() => window.location.reload(), 150); }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-600 text-sm font-medium transition-colors border border-gray-200"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+              <path d="M3 3v5h5"/>
+            </svg>
+            再起動
+          </button>
+        </div>
+
         {/* フッター */}
-        <div className="px-6 pb-5">
+        <div className="px-6 pb-4">
           <p className="text-xs text-gray-300 text-center">© 2025 FutaMindMap</p>
         </div>
       </div>
