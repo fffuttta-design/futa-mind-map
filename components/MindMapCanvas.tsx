@@ -793,12 +793,27 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     const onKey = (e: KeyboardEvent) => {
       // INPUT要素（リストアイテム編集など）ではグローバルショートカットを無効化
       if ((e.target as HTMLElement).tagName === "INPUT") return;
+      // Ctrl+A: ブラウザ全選択を常に防止（テキスト編集中はエリア内テキストを全選択）
+      // ※ setEditingId 後・再レンダリング前の僅かな window でも防止できるよう早期ガード
+      if (e.ctrlKey && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        if (editingIdRef.current && inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.select();
+        }
+        return;
+      }
       if (e.ctrlKey && (e.key === "z" || e.key === "Z")) {
         e.preventDefault();
-        if (editingIdRef.current) { cancelEditRef.current = true; setEditingId(null); }
+        // 編集中は編集キャンセルのみ（undo() は呼ばない）
+        if (editingIdRef.current) { cancelEditRef.current = true; setEditingId(null); return; }
         undo(); return;
       }
-      if (e.ctrlKey && (e.key === "y" || e.key === "Y")) { e.preventDefault(); redo(); return; }
+      if (e.ctrlKey && (e.key === "y" || e.key === "Y")) {
+        e.preventDefault();
+        if (editingIdRef.current) return; // 編集中は redo 無効
+        redo(); return;
+      }
       if (e.ctrlKey && (e.key === "c" || e.key === "C")) {
         if (editingIdRef.current) return;
         const id = [...selectedIds][0];
