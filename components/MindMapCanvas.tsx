@@ -615,6 +615,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   const addArea = useCallback((cx: number, cy: number) => {
     pushUndo();
+    localModifiedAt.current = Date.now();
     const color = AREA_COLORS[Math.floor(Math.random() * AREA_COLORS.length)];
     const newArea: CanvasArea = {
       id: `area-${Date.now()}`,
@@ -636,6 +637,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   const commitAreaEdit = useCallback(() => {
     if (!editingAreaId) return;
+    localModifiedAt.current = Date.now();
     const updated = areasRef.current.map(a =>
       a.id === editingAreaId ? { ...a, title: editingAreaTitle.trim() || a.title } : a
     );
@@ -1235,6 +1237,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setSelectedAreaId(areaId);
     const area = areasRef.current.find(a => a.id === areaId);
     if (!area) return;
+    pushUndo();
+    localModifiedAt.current = Date.now();
     const cp = toCanvas(e.clientX, e.clientY);
     // Find nodes whose centers are inside this area at drag start
     const containedNodeInits = new Map<string, { x: number; y: number }>();
@@ -1258,6 +1262,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     if (!area) return;
     const cp = toCanvas(e.clientX, e.clientY);
     pushUndo();
+    localModifiedAt.current = Date.now();
     resizingAreaRef.current = {
       id: areaId, startCx: cp.x, startCy: cp.y,
       initX: area.x, initY: area.y, initW: area.width, initH: area.height,
@@ -2174,6 +2179,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               {AREA_COLORS.map(c => (
                 <button key={c}
                   onClick={() => {
+                    localModifiedAt.current = Date.now();
                     const updated = areasRef.current.map(a => a.id === areaCtxMenu.id ? { ...a, color: c } : a);
                     setAreas(updated); onAreasChangeRef.current?.(updated);
                   }}
@@ -2186,6 +2192,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               <button
                 onClick={() => {
                   pushUndo();
+                  localModifiedAt.current = Date.now();
                   const updated = areasRef.current.filter(a => a.id !== areaCtxMenu.id);
                   setAreas(updated); onAreasChangeRef.current?.(updated);
                   setAreaCtxMenu(null); setSelectedAreaId(null);
