@@ -61,6 +61,16 @@ export interface LineMessageData {
 }
 // ──────────────────────────────────────────────────────
 
+export interface CanvasArea {
+  id: string;
+  x: number;        // top-left corner in canvas space
+  y: number;
+  width: number;
+  height: number;
+  title: string;
+  color: string;
+}
+
 export interface StickyNote {
   id: string;
   x: number;
@@ -92,5 +102,6 @@ export interface MindMap {
   defaultShape?: "pill" | "rect" | "circle" | "diamond" | "text";
   nodeBorderWidth?: number;
   stickyNotes?: StickyNote[];
+  areas?: CanvasArea[];
   mode?: "mindmap" | "line";
 }

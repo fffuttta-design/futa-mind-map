@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MindMapNode, StickyNote, ListItem } from "@/types";
+import { MindMapNode, StickyNote, CanvasArea, ListItem } from "@/types";
 import NodeToolbar from "./NodeToolbar";
 
 interface Props {
@@ -16,6 +16,8 @@ interface Props {
   edgeStyle?: "curve" | "straight";
   defaultShape?: "pill" | "rect" | "circle" | "diamond" | "text";
   nodeBorderWidth?: number;
+  initialAreas?: CanvasArea[];
+  onAreasChange?: (areas: CanvasArea[]) => void;
 }
 
 const NODE_H = 34;
@@ -43,6 +45,11 @@ function priorityColor(_p: number): string { return PRIORITY_COLOR; }
 const STICKY_COLORS = ["#fef08a", "#fda4af", "#86efac", "#93c5fd", "#d8b4fe", "#fed7aa"] as const;
 const STICKY_DEFAULT_W = 160;
 const STICKY_DEFAULT_H = 120;
+const AREA_HEADER_H = 32;
+const AREA_COLORS = [
+  "#6366f1", "#8b5cf6", "#ec4899", "#ef4444",
+  "#f97316", "#f59e0b", "#10b981", "#3b82f6", "#64748b",
+] as const;
 
 /** ListItemツリーをフラット化 (depth 付き) */
 function flattenListItems(items: ListItem[], depth = 0): { item: ListItem; depth: number }[] {
@@ -202,7 +209,7 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${nodeEls}\n</svg>`;
 }
 
-export default function MindMapCanvas({ initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0 }: Props) {
+export default function MindMapCanvas({ initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, initialAreas, onAreasChange }: Props) {
   const [nodes, setNodes] = useState<MindMapNode[]>(initialNodes);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -247,6 +254,13 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const [editingListItem, setEditingListItem] = useState<{ nodeId: string; itemId: string; text: string } | null>(null);
   const [listItemEditorStyle, setListItemEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
+  const [areas, setAreas] = useState<CanvasArea[]>(initialAreas ?? []);
+  const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
+  const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
+  const [editingAreaTitle, setEditingAreaTitle] = useState("");
+  const [areaEditorStyle, setAreaEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [areaCtxMenu, setAreaCtxMenu] = useState<{ id: string; sx: number; sy: number } | null>(null);
+
   const svgRef = useRef<SVGSVGElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickyInputRef = useRef<HTMLTextAreaElement>(null);
@@ -254,6 +268,24 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const cancelEditRef = useRef(false);
   const copiedNodeRef = useRef<MindMapNode | null>(null);
   const ctxMenuDragRef = useRef<{ startMx: number; startMy: number; startSx: number; startSy: number } | null>(null);
+
+  const areasRef = useRef<CanvasArea[]>(areas);
+  const onAreasChangeRef = useRef(onAreasChange);
+  const draggingAreaRef = useRef<{
+    id: string;
+    startCx: number; startCy: number;
+    initX: number; initY: number;
+    containedNodeInits: Map<string, { x: number; y: number }>;
+  } | null>(null);
+  const resizingAreaRef = useRef<{
+    id: string;
+    startCx: number; startCy: number;
+    initX: number; initY: number;
+    initW: number; initH: number;
+  } | null>(null);
+  const areaInputRef = useRef<HTMLInputElement>(null);
+  areasRef.current = areas;
+  onAreasChangeRef.current = onAreasChange;
 
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null;
 
@@ -286,14 +318,14 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   onStickyNotesChangeRef.current = onStickyNotesChange;
 
   // Undo / Redo（ノード＋付箋を一括管理）
-  type HistoryState = { nodes: MindMapNode[]; stickyNotes: StickyNote[] };
+  type HistoryState = { nodes: MindMapNode[]; stickyNotes: StickyNote[]; areas: CanvasArea[] };
   const undoStack = useRef<HistoryState[]>([]);
   const redoStack = useRef<HistoryState[]>([]);
   // ローカル編集タイムスタンプ: Firestoreスナップショットによる上書きを防ぐ
   const localModifiedAt = useRef<number>(0);
 
   const pushUndo = useCallback(() => {
-    undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current] });
+    undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current], areas: [...areasRef.current] });
     if (undoStack.current.length > 50) undoStack.current.shift();
     redoStack.current = [];
   }, []);
@@ -310,6 +342,11 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     if (Date.now() - localModifiedAt.current < 2500) return;
     setStickyNotes(initialStickyNotes ?? []);
   }, [initialStickyNotes]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => {
+    if (Date.now() - localModifiedAt.current < 2500) return;
+    setAreas(initialAreas ?? []);
+  }, [initialAreas]);
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -409,6 +446,29 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     }
   }, [editingStickyId, stickyNotes, pan, zoom]);
 
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !editingAreaId) { setAreaEditorStyle(null); return; }
+    const area = areas.find(a => a.id === editingAreaId);
+    if (!area) { setAreaEditorStyle(null); return; }
+    const r = svg.getBoundingClientRect();
+    const screenX = r.width / 2 + pan.x + area.x * zoom;
+    const screenY = r.height / 2 + pan.y + area.y * zoom;
+    setAreaEditorStyle({
+      left: screenX + 12 * zoom,
+      top: screenY,
+      width: (area.width - 24) * zoom,
+      height: AREA_HEADER_H * zoom,
+    });
+  }, [editingAreaId, areas, pan, zoom]);
+
+  useEffect(() => {
+    if (editingAreaId && areaInputRef.current) {
+      areaInputRef.current.focus();
+      areaInputRef.current.select();
+    }
+  }, [editingAreaId]);
+
   const updateNodes = useCallback((updated: MindMapNode[]) => {
     pushUndo();
     localModifiedAt.current = Date.now();
@@ -419,23 +479,27 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const undo = useCallback(() => {
     if (undoStack.current.length === 0) return;
     const prev = undoStack.current.pop()!;
-    redoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current] });
+    redoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current], areas: [...areasRef.current] });
     localModifiedAt.current = Date.now();
     setNodes(prev.nodes);
     onNodesChangeRef.current(prev.nodes);
     setStickyNotes(prev.stickyNotes);
     onStickyNotesChangeRef.current?.(prev.stickyNotes);
+    setAreas(prev.areas ?? areasRef.current);
+    onAreasChangeRef.current?.(prev.areas ?? areasRef.current);
   }, []);
 
   const redo = useCallback(() => {
     if (redoStack.current.length === 0) return;
     const next = redoStack.current.pop()!;
-    undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current] });
+    undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current], areas: [...areasRef.current] });
     localModifiedAt.current = Date.now();
     setNodes(next.nodes);
     onNodesChangeRef.current(next.nodes);
     setStickyNotes(next.stickyNotes);
     onStickyNotesChangeRef.current?.(next.stickyNotes);
+    setAreas(next.areas ?? areasRef.current);
+    onAreasChangeRef.current?.(next.areas ?? areasRef.current);
   }, []);
 
   const getVisibleNodes = useCallback((nodeList: MindMapNode[]) => nodeList, []);
@@ -548,6 +612,37 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     });
     setEditingStickyId(null);
   }, [editingStickyId, editingStickyText, pushUndo]);
+
+  const addArea = useCallback((cx: number, cy: number) => {
+    pushUndo();
+    const color = AREA_COLORS[Math.floor(Math.random() * AREA_COLORS.length)];
+    const newArea: CanvasArea = {
+      id: `area-${Date.now()}`,
+      x: cx - 160, y: cy - 100,
+      width: 320, height: 200,
+      title: "エリア",
+      color,
+    };
+    const updated = [...areasRef.current, newArea];
+    setAreas(updated);
+    onAreasChangeRef.current?.(updated);
+    setSelectedAreaId(newArea.id);
+    setInsertMenu(null);
+    setTimeout(() => {
+      setEditingAreaId(newArea.id);
+      setEditingAreaTitle("エリア");
+    }, 50);
+  }, [pushUndo]);
+
+  const commitAreaEdit = useCallback(() => {
+    if (!editingAreaId) return;
+    const updated = areasRef.current.map(a =>
+      a.id === editingAreaId ? { ...a, title: editingAreaTitle.trim() || a.title } : a
+    );
+    setAreas(updated);
+    onAreasChangeRef.current?.(updated);
+    setEditingAreaId(null);
+  }, [editingAreaId, editingAreaTitle]);
 
   const addFloatingNode = useCallback((cx: number, cy: number) => {
     const newNode: MindMapNode = {
@@ -803,16 +898,19 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         }
         return;
       }
-      if (e.ctrlKey && (e.key === "z" || e.key === "Z")) {
+      // Ctrl+Shift+Z or Ctrl+Y = redo
+      if ((e.ctrlKey && (e.key === "y" || e.key === "Y")) ||
+          (e.ctrlKey && e.shiftKey && (e.key === "z" || e.key === "Z"))) {
+        e.preventDefault();
+        if (editingIdRef.current) return;
+        redo(); return;
+      }
+      // Ctrl+Z (without Shift) = undo / cancel edit
+      if (e.ctrlKey && !e.shiftKey && (e.key === "z" || e.key === "Z")) {
         e.preventDefault();
         // 編集中は編集キャンセルのみ（undo() は呼ばない）
         if (editingIdRef.current) { cancelEditRef.current = true; setEditingId(null); return; }
         undo(); return;
-      }
-      if (e.ctrlKey && (e.key === "y" || e.key === "Y")) {
-        e.preventDefault();
-        if (editingIdRef.current) return; // 編集中は redo 無効
-        redo(); return;
       }
       if (e.ctrlKey && (e.key === "c" || e.key === "C")) {
         if (editingIdRef.current) return;
@@ -841,6 +939,17 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         if (e.key === "Escape") setSelectedStickyId(null);
         return;
       }
+      if (selectedAreaId) {
+        if (e.key === "Delete") {
+          pushUndo();
+          const updated = areasRef.current.filter(a => a.id !== selectedAreaId);
+          setAreas(updated);
+          onAreasChangeRef.current?.(updated);
+          setSelectedAreaId(null);
+        }
+        if (e.key === "Escape") setSelectedAreaId(null);
+        return;
+      }
       if (selectedIds.size === 0) return;
       const id = [...selectedIds][0];
       if (e.key === "Tab") { e.preventDefault(); addChild(id); }
@@ -857,7 +966,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedIds, addChild, addSibling, deleteNodes, nodes, readOnly, undo, redo, selectedStickyId, editingStickyId]);
+  }, [selectedIds, addChild, addSibling, deleteNodes, nodes, readOnly, undo, redo, selectedStickyId, editingStickyId, selectedAreaId]);
 
   useEffect(() => {
     if (editingId && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
@@ -912,6 +1021,29 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       if (ctxMenuDragRef.current) {
         const d = ctxMenuDragRef.current;
         setNodeCtxMenu(prev => prev ? { ...prev, sx: d.startSx + e.clientX - d.startMx, sy: d.startSy + e.clientY - d.startMy } : null);
+        return;
+      }
+      // エリアリサイズ
+      if (resizingAreaRef.current) {
+        const ra = resizingAreaRef.current;
+        const cp = getCanvasPos(e.clientX, e.clientY);
+        const newW = Math.max(120, ra.initW + (cp.x - ra.startCx));
+        const newH = Math.max(80, ra.initH + (cp.y - ra.startCy));
+        setAreas(prev => prev.map(a => a.id === ra.id ? { ...a, width: newW, height: newH } : a));
+        return;
+      }
+      // エリアドラッグ（+ 内包ノード連動）
+      if (draggingAreaRef.current) {
+        const da = draggingAreaRef.current;
+        const cp = getCanvasPos(e.clientX, e.clientY);
+        const dx = cp.x - da.startCx, dy = cp.y - da.startCy;
+        setAreas(prev => prev.map(a => a.id === da.id ? { ...a, x: da.initX + dx, y: da.initY + dy } : a));
+        if (da.containedNodeInits.size > 0) {
+          setNodes(prev => prev.map(n => {
+            const init = da.containedNodeInits.get(n.id);
+            return init ? { ...n, x: init.x + dx, y: init.y + dy } : n;
+          }));
+        }
         return;
       }
       // ラバーバンド更新
@@ -1016,6 +1148,15 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         setRubberBand(null);
         return;
       }
+      if (draggingAreaRef.current || resizingAreaRef.current) {
+        onAreasChangeRef.current?.(areasRef.current);
+        if (draggingAreaRef.current && draggingAreaRef.current.containedNodeInits.size > 0) {
+          onNodesChangeRef.current(nodesRef.current);
+        }
+        draggingAreaRef.current = null;
+        resizingAreaRef.current = null;
+        return;
+      }
       if (draggingRef.current || resizingRef.current) {
         onNodesChangeRef.current(nodesRef.current);
         setDragging(null);
@@ -1084,10 +1225,50 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setDraggingSticky({ id: noteId, startCx: cp.x, startCy: cp.y, initX: note.x, initY: note.y });
   };
 
+  const onAreaHeaderMouseDown = (e: React.MouseEvent, areaId: string) => {
+    if (readOnly) return;
+    e.stopPropagation();
+    setInsertMenu(null); setNotePopup(null); setNodeCtxMenu(null);
+    setStickyCtxMenu(null); setAreaCtxMenu(null);
+    setSelectedIds(new Set()); setSelectedStickyId(null);
+    setSelectedAreaId(areaId);
+    const area = areasRef.current.find(a => a.id === areaId);
+    if (!area) return;
+    const cp = toCanvas(e.clientX, e.clientY);
+    // Find nodes whose centers are inside this area at drag start
+    const containedNodeInits = new Map<string, { x: number; y: number }>();
+    for (const n of nodesRef.current) {
+      if (n.x >= area.x && n.x <= area.x + area.width &&
+          n.y >= area.y && n.y <= area.y + area.height) {
+        containedNodeInits.set(n.id, { x: n.x, y: n.y });
+      }
+    }
+    draggingAreaRef.current = {
+      id: areaId, startCx: cp.x, startCy: cp.y,
+      initX: area.x, initY: area.y, containedNodeInits,
+    };
+  };
+
+  const onAreaResizeMouseDown = (e: React.MouseEvent, areaId: string) => {
+    if (readOnly) return;
+    e.stopPropagation();
+    setSelectedAreaId(areaId);
+    const area = areasRef.current.find(a => a.id === areaId);
+    if (!area) return;
+    const cp = toCanvas(e.clientX, e.clientY);
+    pushUndo();
+    resizingAreaRef.current = {
+      id: areaId, startCx: cp.x, startCy: cp.y,
+      initX: area.x, initY: area.y, initW: area.width, initH: area.height,
+    };
+  };
+
   const onBgMouseDown = (e: React.MouseEvent) => {
     setNotePopup(null);
     setNodeCtxMenu(null);
     setStickyCtxMenu(null);
+    setAreaCtxMenu(null);
+    setSelectedAreaId(null);
     if (insertMenu) { setInsertMenu(null); setInsertImageMode(false); return; }
     if (editingId) commitEdit();
     if (editingStickyId) commitStickyEdit();
@@ -1170,6 +1351,78 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       >
         <rect width="100%" height="100%" fill="transparent" onMouseDown={onBgMouseDown} />
         <g transform={`translate(${svgSize.w / 2 + pan.x},${svgSize.h / 2 + pan.y}) scale(${zoom})`}>
+          {/* エリア（ノードの背面に描画） */}
+          {areas.map(area => {
+            const isSelArea = selectedAreaId === area.id;
+            const isEditArea = editingAreaId === area.id;
+            return (
+              <g key={area.id} transform={`translate(${area.x},${area.y})`}>
+                {/* 背景 */}
+                <rect
+                  x={0} y={0} width={area.width} height={area.height} rx={10}
+                  fill={area.color} fillOpacity={0.07}
+                  stroke={area.color} strokeOpacity={isSelArea ? 0.8 : 0.35}
+                  strokeWidth={isSelArea ? 2 : 1.5}
+                  onMouseDown={e => { e.stopPropagation(); setSelectedAreaId(area.id); setSelectedIds(new Set()); }}
+                  style={{ cursor: "default" }}
+                />
+                {/* ヘッダー */}
+                <rect
+                  x={0} y={0} width={area.width} height={AREA_HEADER_H} rx={10}
+                  fill={area.color} fillOpacity={0.18}
+                  onMouseDown={e => onAreaHeaderMouseDown(e, area.id)}
+                  style={{ cursor: "move" }}
+                />
+                <rect
+                  x={0} y={AREA_HEADER_H - 8} width={area.width} height={8}
+                  fill={area.color} fillOpacity={0.18}
+                  onMouseDown={e => onAreaHeaderMouseDown(e, area.id)}
+                  style={{ cursor: "move", pointerEvents: "none" }}
+                />
+                {/* タイトル */}
+                {!isEditArea && (
+                  <text
+                    x={12} y={AREA_HEADER_H / 2}
+                    dominantBaseline="central" fontSize={13} fontWeight="600"
+                    fill={area.color}
+                    style={{ pointerEvents: "none", userSelect: "none" }}
+                  >
+                    {area.title.length > 32 ? area.title.slice(0, 32) + "…" : area.title}
+                  </text>
+                )}
+                {/* ヘッダーの透明ドラッグ＆ダブルクリック領域 */}
+                <rect
+                  x={0} y={0} width={area.width} height={AREA_HEADER_H}
+                  fill="transparent"
+                  onMouseDown={e => onAreaHeaderMouseDown(e, area.id)}
+                  onDoubleClick={e => {
+                    e.stopPropagation();
+                    if (readOnly) return;
+                    setEditingAreaId(area.id);
+                    setEditingAreaTitle(area.title);
+                  }}
+                  onContextMenu={e => {
+                    e.preventDefault(); e.stopPropagation();
+                    if (readOnly) return;
+                    const svg = svgRef.current; if (!svg) return;
+                    const r = svg.getBoundingClientRect();
+                    setAreaCtxMenu({ id: area.id, sx: e.clientX - r.left, sy: e.clientY - r.top });
+                    setSelectedAreaId(area.id);
+                  }}
+                  style={{ cursor: "move" }}
+                />
+                {/* リサイズハンドル（右下） */}
+                {isSelArea && !readOnly && (
+                  <rect
+                    x={area.width - 6} y={area.height - 6} width={12} height={12} rx={2}
+                    fill="white" stroke={area.color} strokeWidth={1.5}
+                    onMouseDown={e => onAreaResizeMouseDown(e, area.id)}
+                    style={{ cursor: "nwse-resize", pointerEvents: "all" }}
+                  />
+                )}
+              </g>
+            );
+          })}
           {visible.filter(n => n.parentId && visibleIds.has(n.parentId)).map(n => {
             const p = nodes.find(x => x.id === n.parentId)!;
             const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
@@ -1806,6 +2059,38 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         />
       )}
 
+      {/* エリアタイトル インライン編集 */}
+      {!readOnly && editingAreaId && areaEditorStyle && (
+        <input
+          ref={areaInputRef}
+          type="text"
+          value={editingAreaTitle}
+          onChange={e => setEditingAreaTitle(e.target.value)}
+          onBlur={commitAreaEdit}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === "Enter") { e.preventDefault(); commitAreaEdit(); }
+            if (e.key === "Escape") { e.stopPropagation(); setEditingAreaId(null); }
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          style={{
+            position: "absolute",
+            left: areaEditorStyle.left,
+            top: areaEditorStyle.top,
+            width: areaEditorStyle.width,
+            height: areaEditorStyle.height,
+            fontSize: 13 * zoom,
+            fontWeight: "600",
+            color: areasRef.current.find(a => a.id === editingAreaId)?.color ?? "#6366f1",
+            background: "transparent",
+            border: "none",
+            outline: "none",
+            padding: "0 4px",
+            lineHeight: `${AREA_HEADER_H * zoom}px`,
+          }}
+        />
+      )}
+
       {/* 付箋コンテキストメニュー */}
       {!readOnly && stickyCtxMenu && (() => {
         const note = stickyNotes.find(n => n.id === stickyCtxMenu.id);
@@ -1839,6 +2124,45 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         );
       })()}
 
+      {/* エリアコンテキストメニュー */}
+      {!readOnly && areaCtxMenu && (() => {
+        const area = areas.find(a => a.id === areaCtxMenu.id);
+        if (!area) return null;
+        return (
+          <div
+            className="absolute z-50 bg-white rounded-xl shadow-lg border border-gray-100 p-3 flex flex-col gap-2"
+            style={{ left: areaCtxMenu.sx, top: areaCtxMenu.sy, minWidth: 180 }}
+            onMouseDown={e => e.stopPropagation()}
+            onContextMenu={e => e.preventDefault()}
+          >
+            <p className="text-xs font-semibold text-gray-400 px-1">エリアの色</p>
+            <div className="flex gap-1.5 flex-wrap px-1">
+              {AREA_COLORS.map(c => (
+                <button key={c}
+                  onClick={() => {
+                    const updated = areasRef.current.map(a => a.id === areaCtxMenu.id ? { ...a, color: c } : a);
+                    setAreas(updated); onAreasChangeRef.current?.(updated);
+                  }}
+                  className="w-6 h-6 rounded-full border-2 hover:scale-110 transition-transform"
+                  style={{ backgroundColor: c, borderColor: area.color === c ? "#1e293b" : "transparent" }}
+                />
+              ))}
+            </div>
+            <div className="border-t border-gray-100 pt-1">
+              <button
+                onClick={() => {
+                  pushUndo();
+                  const updated = areasRef.current.filter(a => a.id !== areaCtxMenu.id);
+                  setAreas(updated); onAreasChangeRef.current?.(updated);
+                  setAreaCtxMenu(null); setSelectedAreaId(null);
+                }}
+                className="w-full px-3 py-1.5 text-sm text-left text-red-500 hover:bg-red-50 rounded-lg"
+              >🗑️ エリアを削除</button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* 背景右クリックメニュー */}
       {!readOnly && insertMenu && (
         <div
@@ -1852,6 +2176,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               <button onClick={() => addFloatingTextNode(insertMenu.cx, insertMenu.cy)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">📝 テキスト</button>
               <button onClick={() => addFloatingNode(insertMenu.cx, insertMenu.cy)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">＋ ノード</button>
               <button onClick={() => addStickyNote(insertMenu.cx, insertMenu.cy)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">📌 付箋</button>
+              <button onClick={() => addArea(insertMenu.cx, insertMenu.cy)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">🗂️ エリア</button>
               <button onClick={() => setInsertImageMode(true)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">🖼️ 画像</button>
             </>
           ) : (

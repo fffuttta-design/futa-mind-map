@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { doc, onSnapshot, updateDoc, addDoc, collection, query, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
-import { MindMap, MindMapNode, StickyNote, LineMessageData, HistoryEntry } from "@/types";
+import { MindMap, MindMapNode, StickyNote, CanvasArea, LineMessageData, HistoryEntry } from "@/types";
 import MindMapCanvas from "@/components/MindMapCanvas";
 import LineMessagePanel from "@/components/LineMessagePanel";
 import LinePreviewModal from "@/components/LinePreviewModal";
@@ -97,6 +97,13 @@ export default function MapEditorPage() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       await updateDoc(doc(db, "maps", id), { stickyNotes, updatedAt: Date.now() });
+    }, 800);
+  }, [id]);
+
+  const saveAreas = useCallback((areas: CanvasArea[]) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      await updateDoc(doc(db, "maps", id), { areas, updatedAt: Date.now() });
     }, 800);
   }, [id]);
 
@@ -226,6 +233,8 @@ export default function MapEditorPage() {
                 onNodesChange={saveNodes}
                 initialStickyNotes={map.stickyNotes}
                 onStickyNotesChange={saveStickyNotes}
+                initialAreas={map.areas}
+                onAreasChange={saveAreas}
                 onSelectionChange={setSelectedNodeId}
                 mode={map.mode ?? "mindmap"}
                 exportRef={exportRef}
