@@ -101,7 +101,15 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
 
-const NOTE_BODY_H = 72;
+const NOTE_BODY_LINE_H = 18;
+const NOTE_BODY_VPAD = 16;
+const NOTE_BODY_MIN_LINES = 3;
+
+function noteBodyHeight(noteContent: string): number {
+  const plain = stripHtml(noteContent || "");
+  const lines = Math.max(NOTE_BODY_MIN_LINES, plain.split("\n").length);
+  return lines * NOTE_BODY_LINE_H + NOTE_BODY_VPAD;
+}
 
 function nodeWidth(node: MindMapNode): number {
   if (node.customWidth) return node.customWidth;
@@ -119,7 +127,7 @@ function nodeWidth(node: MindMapNode): number {
 function nodeHeight(node: MindMapNode): number {
   if (node.noteContent !== undefined) {
     if (node.collapsed) return LIST_HEADER_H;
-    return node.customHeight ?? (LIST_HEADER_H + NOTE_BODY_H);
+    return node.customHeight ?? (LIST_HEADER_H + noteBodyHeight(node.noteContent));
   }
   if (node.listItems) {
     if (node.collapsed) return LIST_HEADER_H;
@@ -265,6 +273,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const [stickyEditorStyle, setStickyEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [editingListItem, setEditingListItem] = useState<{ nodeId: string; itemId: string; text: string } | null>(null);
   const [listItemEditorStyle, setListItemEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [noteBodyEditingId, setNoteBodyEditingId] = useState<string | null>(null);
+  const [noteBodyText, setNoteBodyText] = useState("");
+  const [noteBodyEditorStyle, setNoteBodyEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
   const [areas, setAreas] = useState<CanvasArea[]>(initialAreas ?? []);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
@@ -277,6 +288,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickyInputRef = useRef<HTMLTextAreaElement>(null);
   const listItemInputRef = useRef<HTMLInputElement>(null);
+  const noteBodyInputRef = useRef<HTMLTextAreaElement>(null);
   const cancelEditRef = useRef(false);
   const copiedNodeRef = useRef<MindMapNode | null>(null);
   const ctxMenuDragRef = useRef<{ startMx: number; startMy: number; startSx: number; startSy: number } | null>(null);
@@ -441,6 +453,35 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingListItem?.itemId]);
+
+  // ノート本文インライン編集 - エディタ位置計算
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !noteBodyEditingId) { setNoteBodyEditorStyle(null); return; }
+    const node = nodes.find(n => n.id === noteBodyEditingId);
+    if (!node || node.noteContent === undefined) { setNoteBodyEditorStyle(null); return; }
+    const r = svg.getBoundingClientRect();
+    const sx = r.width / 2 + pan.x + node.x * zoom;
+    const sy = r.height / 2 + pan.y + node.y * zoom;
+    const w = nodeWidth(node) * zoom;
+    const h = nodeHeight(node) * zoom;
+    const bodyTop = sy - h / 2 + LIST_HEADER_H * zoom;
+    const lines = Math.max(NOTE_BODY_MIN_LINES, noteBodyText.split("\n").length + 1);
+    const bodyHeight = (lines * NOTE_BODY_LINE_H + NOTE_BODY_VPAD) * zoom;
+    setNoteBodyEditorStyle({
+      left: sx - w / 2 + 1,
+      top: bodyTop,
+      width: w - 2,
+      height: bodyHeight,
+    });
+  }, [noteBodyEditingId, noteBodyText, nodes, pan, zoom]);
+
+  // ノート本文編集開始時にフォーカス
+  useEffect(() => {
+    if (noteBodyEditingId && noteBodyInputRef.current) {
+      noteBodyInputRef.current.focus();
+    }
+  }, [noteBodyEditingId]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -807,6 +848,16 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const startEditListItem = useCallback((nodeId: string, itemId: string, text: string) => {
     setEditingListItem({ nodeId, itemId, text });
   }, []);
+
+  const commitNoteBodyEdit = useCallback(() => {
+    if (!noteBodyEditingId) return;
+    const upd = nodesRef.current.map(n =>
+      n.id === noteBodyEditingId ? { ...n, noteContent: noteBodyText } : n
+    );
+    setNodes(upd);
+    onNodesChangeRef.current(upd);
+    setNoteBodyEditingId(null);
+  }, [noteBodyEditingId, noteBodyText]);
 
   const commitListItemEdit = useCallback(() => {
     if (!editingListItem) return;
@@ -1460,7 +1511,12 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
           {visible.map(node => {
             // 改修③: 編集中は editText でサイズ計算 → 改行と同時に図形が拡大
             const isEditing = editingId === node.id;
-            const renderNode = isEditing ? { ...node, text: editText } : node;
+            const isNoteBodyEditing = noteBodyEditingId === node.id;
+            const renderNode = isEditing
+              ? { ...node, text: editText }
+              : isNoteBodyEditing
+                ? { ...node, noteContent: noteBodyText }
+                : node;
             const w = nodeWidth(renderNode), h = nodeHeight(renderNode);
             const isSelected = selectedIds.has(node.id);
             const isImageNode = !!node.imageWidth;
@@ -1535,11 +1591,16 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                       <>
                         <rect
                           x={-w / 2 + 1} y={-h / 2 + LIST_HEADER_H}
-                          width={w - 2} height={NOTE_BODY_H}
+                          width={w - 2} height={h - LIST_HEADER_H}
                           fill="transparent"
                           onMouseDown={e => e.stopPropagation()}
-                          onClick={e => { e.stopPropagation(); onNoteOpen?.(node.id); }}
-                          style={{ cursor: "pointer" }}
+                          onDoubleClick={e => {
+                            e.stopPropagation();
+                            if (readOnly) return;
+                            setNoteBodyText(stripHtml(node.noteContent || ""));
+                            setNoteBodyEditingId(node.id);
+                          }}
+                          style={{ cursor: "text" }}
                         />
                         <text
                           x={-w / 2 + 10} y={-h / 2 + LIST_HEADER_H + 14}
@@ -2136,6 +2197,41 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         />
       )}
 
+      {/* ノート本文インラインエディタ */}
+      {!readOnly && noteBodyEditingId && noteBodyEditorStyle && (
+        <textarea
+          ref={noteBodyInputRef}
+          value={noteBodyText}
+          onChange={e => setNoteBodyText(e.target.value)}
+          onBlur={commitNoteBodyEdit}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === "Escape") { setNoteBodyEditingId(null); }
+            if (e.key === "Tab") { e.preventDefault(); commitNoteBodyEdit(); }
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          placeholder="ノートを入力..."
+          style={{
+            position: "absolute",
+            left: noteBodyEditorStyle.left,
+            top: noteBodyEditorStyle.top,
+            width: noteBodyEditorStyle.width,
+            height: noteBodyEditorStyle.height,
+            fontSize: 11 * zoom,
+            lineHeight: `${NOTE_BODY_LINE_H * zoom}px`,
+            padding: `${8 * zoom}px ${10 * zoom}px`,
+            background: "rgba(249, 250, 251, 0.97)",
+            border: "none",
+            outline: "none",
+            color: "#334155",
+            resize: "none",
+            fontFamily: "inherit",
+            borderRadius: `0 0 ${8 * zoom}px ${8 * zoom}px`,
+            overflowY: "hidden",
+          }}
+        />
+      )}
+
       {!readOnly && selectedId && toolbarPos && !editingId && !nodes.find(n => n.id === selectedId)?.imageWidth && (
         <NodeToolbar
           node={nodes.find(n => n.id === selectedId)!}
@@ -2430,17 +2526,21 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
             <button
               onClick={() => {
                 applyFormat({ noteContent: "" });
-                onNoteOpen?.(ctxNode.id);
                 setNodeCtxMenu(null);
+                setTimeout(() => { setNoteBodyText(""); setNoteBodyEditingId(ctxNode.id); }, 50);
               }}
               className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
             ><span>📝</span><span>ノートを追加</span></button>
           ) : (
             <>
               <button
-                onClick={() => { onNoteOpen?.(ctxNode.id); setNodeCtxMenu(null); }}
+                onClick={() => {
+                  setNoteBodyText(stripHtml(ctxNode.noteContent || ""));
+                  setNoteBodyEditingId(ctxNode.id);
+                  setNodeCtxMenu(null);
+                }}
                 className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-              ><span>📝</span><span>ノートを開く</span></button>
+              ><span>📝</span><span>ノートを編集</span></button>
               <button
                 onClick={() => { applyFormat({ noteContent: undefined }); setNodeCtxMenu(null); }}
                 className="w-full text-left px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 flex items-center gap-2"
