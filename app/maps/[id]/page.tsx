@@ -53,10 +53,14 @@ export default function MapEditorPage() {
   const [manualSaveName, setManualSaveName] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [showMapPicker, setShowMapPicker] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const { hasUpdate, latestVersion } = useVersionCheck();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<{ exportSVG: () => void; exportPNG: () => void } | null>(null);
   const lastHistorySave = useRef<number>(0);
+  // 最新の flushSaves を unmount / beforeunload から参照するための ref
+  const flushSavesRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const tabRegistered = useRef(false);
   // 保存待ちデータを種類別に蓄積（タイマーが上書きされても消えないよう）
   const pendingSave = useRef<{
@@ -114,6 +118,21 @@ export default function MapEditorPage() {
     }
   }, [id]);
 
+  // 常に最新の flushSaves を ref に保持（unmount・beforeunload から stale closure なしで呼べるよう）
+  useEffect(() => { flushSavesRef.current = flushSaves; }, [flushSaves]);
+
+  // アンマウント時にフラッシュ（タブ切り替え・ナビゲーションによる unmount 対策）
+  useEffect(() => {
+    return () => { flushSavesRef.current(); };
+  }, []);
+
+  // ブラウザ閉じる・リロード直前のフォールバック保存
+  useEffect(() => {
+    const handle = () => { flushSavesRef.current(); };
+    window.addEventListener("beforeunload", handle);
+    return () => window.removeEventListener("beforeunload", handle);
+  }, []);
+
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => flushSaves(), 800);
@@ -133,6 +152,21 @@ export default function MapEditorPage() {
     pendingSave.current = { ...pendingSave.current, areas };
     scheduleSave();
   }, [scheduleSave]);
+
+  /** 明示的な「保存」ボタン用：flush して UI フィードバックを出す */
+  const handleManualSave = useCallback(async () => {
+    if (saveStatus === "saving") return;
+    setSaveStatus("saving");
+    if (savedFeedbackTimer.current) clearTimeout(savedFeedbackTimer.current);
+    try {
+      await flushSaves();
+      setSaveStatus("saved");
+      savedFeedbackTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
+    } catch {
+      setSaveStatus("error");
+      savedFeedbackTimer.current = setTimeout(() => setSaveStatus("idle"), 3000);
+    }
+  }, [flushSaves, saveStatus]);
 
   const handleExport = useCallback(() => {
     if (!map) return;
@@ -208,9 +242,12 @@ export default function MapEditorPage() {
 
   return (
     <div className="flex flex-col h-screen">
-      <TabBar currentId={id} onPlusClick={() => setShowMapPicker(true)} />
+      <TabBar currentId={id} onPlusClick={() => setShowMapPicker(true)} onBeforeNavigate={flushSaves} />
       <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shrink-0">
-        <button onClick={() => router.push("/maps")} className="text-gray-400 hover:text-gray-600 transition-colors text-sm shrink-0">
+        <button
+          onClick={async () => { await flushSaves(); router.push("/maps"); }}
+          className="text-gray-400 hover:text-gray-600 transition-colors text-sm shrink-0"
+        >
           ← 一覧
         </button>
         <input
@@ -241,7 +278,21 @@ export default function MapEditorPage() {
             onClick={() => setShowHistory(h => !h)}
             className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${showHistory ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
           >🕐 履歴</button>
-          <span className="text-xs text-gray-400">自動保存</span>
+          <button
+            onClick={handleManualSave}
+            disabled={saveStatus === "saving"}
+            className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all border ${
+              saveStatus === "saving"
+                ? "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
+                : saveStatus === "saved"
+                ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                : saveStatus === "error"
+                ? "bg-red-50 text-red-600 border-red-200"
+                : "bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
+            }`}
+          >
+            {saveStatus === "saving" ? "保存中…" : saveStatus === "saved" ? "✓ 保存済み" : saveStatus === "error" ? "⚠ 保存失敗" : "💾 保存"}
+          </button>
         </div>
       </header>
 

@@ -7,9 +7,11 @@ import { Tab, loadTabs, closeTab } from "@/lib/tabs";
 interface Props {
   currentId: string;
   onPlusClick?: () => void;
+  /** タブ切り替え・閉じる前に呼ばれる（未保存データのフラッシュ用） */
+  onBeforeNavigate?: () => Promise<void>;
 }
 
-export default function TabBar({ currentId, onPlusClick }: Props) {
+export default function TabBar({ currentId, onPlusClick, onBeforeNavigate }: Props) {
   const router = useRouter();
   const [tabs, setTabs] = useState<Tab[]>([]);
 
@@ -28,8 +30,9 @@ export default function TabBar({ currentId, onPlusClick }: Props) {
     setTabs(loadTabs());
   }, [currentId]);
 
-  const handleClose = (e: React.MouseEvent, id: string) => {
+  const handleClose = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    if (id === currentId) await onBeforeNavigate?.();
     const prevTabs = loadTabs();
     const remaining = closeTab(id);
     setTabs(remaining);
@@ -54,7 +57,11 @@ export default function TabBar({ currentId, onPlusClick }: Props) {
         return (
           <div
             key={tab.id}
-            onClick={() => !isActive && router.push(`/maps/${tab.id}`)}
+            onClick={async () => {
+              if (isActive) return;
+              await onBeforeNavigate?.();
+              router.push(`/maps/${tab.id}`);
+            }}
             className={`group flex items-center gap-1 px-3 py-1.5 rounded-t-lg text-xs font-medium shrink-0 max-w-[180px] border border-b-0 transition-colors
               ${isActive
                 ? "bg-white text-gray-800 border-gray-200 shadow-sm -mb-px cursor-default z-10"
