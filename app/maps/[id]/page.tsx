@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { doc, onSnapshot, updateDoc, addDoc, collection, query, orderBy, limit, waitForPendingWrites } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, addDoc, collection, query, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { MindMap, MindMapNode, StickyNote, CanvasArea, LineMessageData, HistoryEntry } from "@/types";
@@ -11,12 +11,7 @@ import LineMessagePanel from "@/components/LineMessagePanel";
 import LinePreviewModal from "@/components/LinePreviewModal";
 import SettingsModal from "@/components/SettingsModal";
 import PageSettingsModal from "@/components/PageSettingsModal";
-import TabBar from "@/components/TabBar";
-import TabMapPickerModal from "@/components/TabMapPickerModal";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
-import { openTab, updateTabTitle } from "@/lib/tabs";
-import { exportToFMM, FMMFile } from "@/lib/fmm";
-import { APP_VERSION } from "@/lib/version";
 
 function groupByDate(entries: HistoryEntry[]) {
   const groups: { date: string; entries: HistoryEntry[] }[] = [];
@@ -52,16 +47,10 @@ export default function MapEditorPage() {
   const [showManualSave, setShowManualSave] = useState(false);
   const [manualSaveName, setManualSaveName] = useState("");
   const [showSettings, setShowSettings] = useState(false);
-  const [showMapPicker, setShowMapPicker] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const { hasUpdate, latestVersion } = useVersionCheck();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savedFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<{ exportSVG: () => void; exportPNG: () => void } | null>(null);
   const lastHistorySave = useRef<number>(0);
-  // 最新の flushSaves を unmount / beforeunload から参照するための ref
-  const flushSavesRef = useRef<() => Promise<void>>(() => Promise.resolve());
-  const tabRegistered = useRef(false);
   // 保存待ちデータを種類別に蓄積（タイマーが上書きされても消えないよう）
   const pendingSave = useRef<{
     nodes?: MindMapNode[];
@@ -74,12 +63,7 @@ export default function MapEditorPage() {
   }, [user, loading, router]);
 
   useEffect(() => {
-    setMap(null);
-  }, [id]);
-
-  useEffect(() => {
     if (!id) return;
-    tabRegistered.current = false;
     const unsub = onSnapshot(doc(db, "maps", id), (snap) => {
       if (snap.exists()) {
         const data = { id: snap.id, ...snap.data() } as MindMap;
@@ -89,11 +73,6 @@ export default function MapEditorPage() {
         setEdgeStyle(data.edgeStyle ?? "curve");
         setDefaultShape(data.defaultShape ?? "pill");
         setNodeBorderWidth(data.nodeBorderWidth ?? 0);
-        // 初回スナップショット時にタブを登録
-        if (!tabRegistered.current) {
-          tabRegistered.current = true;
-          openTab(id, data.title);
-        }
       }
     });
     return unsub;
@@ -122,31 +101,6 @@ export default function MapEditorPage() {
     }
   }, [id]);
 
-  /**
-   * flush してサーバー確認まで待つ（ナビゲーション直前専用）
-   * - pendingSave が空でも「直前の updateDoc が in-flight」のケースを waitForPendingWrites でカバー
-   * - これにより、新しいリスナー貼り直し時に必ずサーバー最新データが届く
-   */
-  const flushAndWait = useCallback(async () => {
-    await flushSaves();
-    await waitForPendingWrites(db);
-  }, [flushSaves]);
-
-  // 常に最新の flushAndWait を ref に保持（unmount・beforeunload から stale closure なしで呼べるよう）
-  useEffect(() => { flushSavesRef.current = flushAndWait; }, [flushAndWait]);
-
-  // アンマウント時にフラッシュ（タブ切り替え・ナビゲーションによる unmount 対策）
-  useEffect(() => {
-    return () => { flushSavesRef.current(); };
-  }, []);
-
-  // ブラウザ閉じる・リロード直前のフォールバック保存
-  useEffect(() => {
-    const handle = () => { flushSavesRef.current(); };
-    window.addEventListener("beforeunload", handle);
-    return () => window.removeEventListener("beforeunload", handle);
-  }, []);
-
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => flushSaves(), 800);
@@ -167,42 +121,7 @@ export default function MapEditorPage() {
     scheduleSave();
   }, [scheduleSave]);
 
-  /** 明示的な「保存」ボタン用：flush して UI フィードバックを出す */
-  const handleManualSave = useCallback(async () => {
-    if (saveStatus === "saving") return;
-    setSaveStatus("saving");
-    if (savedFeedbackTimer.current) clearTimeout(savedFeedbackTimer.current);
-    try {
-      await flushSaves();
-      setSaveStatus("saved");
-      savedFeedbackTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
-    } catch {
-      setSaveStatus("error");
-      savedFeedbackTimer.current = setTimeout(() => setSaveStatus("idle"), 3000);
-    }
-  }, [flushSaves, saveStatus]);
-
-  const handleExport = useCallback(() => {
-    if (!map) return;
-    exportToFMM(map, APP_VERSION);
-  }, [map]);
-
-  const handleImport = useCallback(async (fmm: FMMFile) => {
-    await flushSaves();
-    await updateDoc(doc(db, "maps", id), {
-      nodes: fmm.nodes,
-      stickyNotes: fmm.stickyNotes ?? [],
-      areas: fmm.areas ?? [],
-      edgeStyle: fmm.edgeStyle ?? "curve",
-      defaultShape: fmm.defaultShape ?? "pill",
-      nodeBorderWidth: fmm.nodeBorderWidth ?? 0,
-      mode: fmm.mode ?? "mindmap",
-      updatedAt: Date.now(),
-    });
-  }, [id, flushSaves]);
-
   const saveTitle = async (newTitle: string) => {
-    updateTabTitle(id, newTitle);
     await updateDoc(doc(db, "maps", id), { title: newTitle, updatedAt: Date.now() });
   };
 
@@ -256,13 +175,9 @@ export default function MapEditorPage() {
 
   return (
     <div className="flex flex-col h-screen">
-      <TabBar currentId={id} onPlusClick={() => setShowMapPicker(true)} onBeforeNavigate={flushAndWait} />
       <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shrink-0">
-        <button
-          onClick={async () => { await flushAndWait(); router.push("/maps"); }}
-          className="text-gray-400 hover:text-gray-600 transition-colors text-sm shrink-0"
-        >
-          ← 一覧
+        <button onClick={() => router.push("/maps")} className="text-gray-400 hover:text-gray-600 transition-colors text-sm shrink-0">
+          ← 戻る
         </button>
         <input
           value={title}
@@ -292,21 +207,7 @@ export default function MapEditorPage() {
             onClick={() => setShowHistory(h => !h)}
             className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${showHistory ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
           >🕐 履歴</button>
-          <button
-            onClick={handleManualSave}
-            disabled={saveStatus === "saving"}
-            className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all border ${
-              saveStatus === "saving"
-                ? "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed"
-                : saveStatus === "saved"
-                ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                : saveStatus === "error"
-                ? "bg-red-50 text-red-600 border-red-200"
-                : "bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
-            }`}
-          >
-            {saveStatus === "saving" ? "保存中…" : saveStatus === "saved" ? "✓ 保存済み" : saveStatus === "error" ? "⚠ 保存失敗" : "💾 保存"}
-          </button>
+          <span className="text-xs text-gray-400">自動保存</span>
         </div>
       </header>
 
@@ -340,9 +241,8 @@ export default function MapEditorPage() {
             </div>
           )}
           {historyPreview
-            ? <MindMapCanvas key={`${id}-history`} initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly edgeStyle={edgeStyle} />
+            ? <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly edgeStyle={edgeStyle} />
             : <MindMapCanvas
-                key={id}
                 initialNodes={map.nodes}
                 onNodesChange={saveNodes}
                 initialStickyNotes={map.stickyNotes}
@@ -481,14 +381,6 @@ export default function MapEditorPage() {
         )}
       </div>
 
-      {/* タブ マップ選択モーダル */}
-      {showMapPicker && (
-        <TabMapPickerModal
-          currentMapId={id}
-          onClose={() => setShowMapPicker(false)}
-        />
-      )}
-
       {/* LINE プレビューモーダル */}
       {previewMessage && (
         <LinePreviewModal
@@ -504,9 +396,7 @@ export default function MapEditorPage() {
           onClose={() => setShowSettings(false)}
           initialHasUpdate={hasUpdate}
           initialLatestVersion={latestVersion}
-          onBeforeReload={flushAndWait}
-          onExport={handleExport}
-          onImport={handleImport}
+          onBeforeReload={flushSaves}
         />
       )}
 

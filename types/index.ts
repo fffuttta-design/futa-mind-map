@@ -33,7 +33,6 @@ export interface MindMapNode {
   listItems?: ListItem[];
   listFontSize?: number;
   listType?: "checkbox" | "numbered" | "bullet";
-  noteContent?: string;   // 定義されていればノートノード（空文字列も有効）
 }
 
 // ── LINE モード ──────────────────────────────────────
