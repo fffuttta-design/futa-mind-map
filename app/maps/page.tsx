@@ -9,6 +9,7 @@ import { MindMap, MindMapNode } from "@/types";
 import { APP_VERSION } from "@/lib/version";
 import SettingsModal from "@/components/SettingsModal";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
+import { openTab } from "@/lib/tabs";
 
 export default function MapsPage() {
   const { user, loading, signOut } = useAuth();
@@ -89,6 +90,7 @@ export default function MapsPage() {
       mode: isLine ? "line" : "mindmap",
     });
     setCreating(false);
+    openTab(ref.id, isLine ? "LINEシナリオ設計" : "新しいマップ");
     router.push(`/maps/${ref.id}`);
   };
 
@@ -206,7 +208,7 @@ export default function MapsPage() {
               {filteredMaps.map(map => (
                 <div
                   key={map.id}
-                  onClick={() => router.push(`/maps/${map.id}`)}
+                  onClick={() => { openTab(map.id, map.title); router.push(`/maps/${map.id}`); }}
                   className="bg-white rounded-xl border border-gray-100 p-5 cursor-pointer hover:shadow-md transition-shadow group relative"
                 >
                   <div className="flex items-start justify-between mb-2">

@@ -11,7 +11,9 @@ import LineMessagePanel from "@/components/LineMessagePanel";
 import LinePreviewModal from "@/components/LinePreviewModal";
 import SettingsModal from "@/components/SettingsModal";
 import PageSettingsModal from "@/components/PageSettingsModal";
+import TabBar from "@/components/TabBar";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
+import { openTab, updateTabTitle } from "@/lib/tabs";
 
 function groupByDate(entries: HistoryEntry[]) {
   const groups: { date: string; entries: HistoryEntry[] }[] = [];
@@ -51,6 +53,7 @@ export default function MapEditorPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<{ exportSVG: () => void; exportPNG: () => void } | null>(null);
   const lastHistorySave = useRef<number>(0);
+  const tabRegistered = useRef(false);
   // 保存待ちデータを種類別に蓄積（タイマーが上書きされても消えないよう）
   const pendingSave = useRef<{
     nodes?: MindMapNode[];
@@ -64,6 +67,7 @@ export default function MapEditorPage() {
 
   useEffect(() => {
     if (!id) return;
+    tabRegistered.current = false;
     const unsub = onSnapshot(doc(db, "maps", id), (snap) => {
       if (snap.exists()) {
         const data = { id: snap.id, ...snap.data() } as MindMap;
@@ -73,6 +77,11 @@ export default function MapEditorPage() {
         setEdgeStyle(data.edgeStyle ?? "curve");
         setDefaultShape(data.defaultShape ?? "pill");
         setNodeBorderWidth(data.nodeBorderWidth ?? 0);
+        // 初回スナップショット時にタブを登録
+        if (!tabRegistered.current) {
+          tabRegistered.current = true;
+          openTab(id, data.title);
+        }
       }
     });
     return unsub;
@@ -122,6 +131,7 @@ export default function MapEditorPage() {
   }, [scheduleSave]);
 
   const saveTitle = async (newTitle: string) => {
+    updateTabTitle(id, newTitle);
     await updateDoc(doc(db, "maps", id), { title: newTitle, updatedAt: Date.now() });
   };
 
@@ -175,9 +185,10 @@ export default function MapEditorPage() {
 
   return (
     <div className="flex flex-col h-screen">
+      <TabBar currentId={id} />
       <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shrink-0">
         <button onClick={() => router.push("/maps")} className="text-gray-400 hover:text-gray-600 transition-colors text-sm shrink-0">
-          ← 戻る
+          ← 一覧
         </button>
         <input
           value={title}
