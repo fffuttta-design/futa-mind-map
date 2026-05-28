@@ -21,10 +21,12 @@ export default function NotePanel({ node, onUpdate, onClose }: Props) {
   // onUpdate は毎レンダリングで変わるため ref で保持（stale closure 対策）
   useEffect(() => { onUpdateRef.current = onUpdate; }, [onUpdate]);
 
-  // ノード変更時のみ初期化
+  // ノード変更時のみ初期化 + フォーカス
   useEffect(() => {
     if (editorRef.current) {
       editorRef.current.innerHTML = node.noteContent ?? "";
+      // SVGがfocusを保持している場合があるため少し遅延してフォーカス
+      setTimeout(() => editorRef.current?.focus(), 50);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id]);
@@ -93,6 +95,8 @@ export default function NotePanel({ node, onUpdate, onClose }: Props) {
           ref={editorRef}
           contentEditable
           suppressContentEditableWarning
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
           data-placeholder="ノートを入力..."
           onInput={scheduleSave}
           onMouseUp={handleSelectionChange}
@@ -105,8 +109,8 @@ export default function NotePanel({ node, onUpdate, onClose }: Props) {
             }
             setTimeout(() => setPopup(null), 200);
           }}
-          className="outline-none text-sm text-gray-700 leading-relaxed"
-          style={{ whiteSpace: "pre-wrap", minHeight: "200px" }}
+          className="outline-none text-sm text-gray-700 leading-relaxed rounded p-1 focus:bg-gray-50 transition-colors"
+          style={{ whiteSpace: "pre-wrap", minHeight: "200px", cursor: "text" }}
         />
         {popup && (
           <div
