@@ -51,6 +51,7 @@ export default function MapEditorPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<{ exportSVG: () => void; exportPNG: () => void } | null>(null);
   const lastHistorySave = useRef<number>(0);
+  const flushSavesRef = useRef<() => Promise<void>>(() => Promise.resolve());
   // 保存待ちデータを種類別に蓄積（タイマーが上書きされても消えないよう）
   const pendingSave = useRef<{
     nodes?: MindMapNode[];
@@ -100,6 +101,14 @@ export default function MapEditorPage() {
       await addDoc(collection(db, "maps", id, "history"), { nodes: p.nodes, savedAt: now });
     }
   }, [id]);
+
+  useEffect(() => { flushSavesRef.current = flushSaves; }, [flushSaves]);
+  useEffect(() => { return () => { flushSavesRef.current(); }; }, []);
+  useEffect(() => {
+    const handle = () => { flushSavesRef.current(); };
+    window.addEventListener("beforeunload", handle);
+    return () => window.removeEventListener("beforeunload", handle);
+  }, []);
 
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -152,8 +161,9 @@ export default function MapEditorPage() {
       tags: [],
     });
     setHistoryMenuId(null);
+    await flushSaves();
     router.push("/maps");
-  }, [title, user, router]);
+  }, [title, user, router, flushSaves]);
 
   const saveManualSnapshot = async () => {
     if (!map) return;
@@ -176,7 +186,7 @@ export default function MapEditorPage() {
   return (
     <div className="flex flex-col h-screen">
       <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shrink-0">
-        <button onClick={() => router.push("/maps")} className="text-gray-400 hover:text-gray-600 transition-colors text-sm shrink-0">
+        <button onClick={async () => { await flushSaves(); router.push("/maps"); }} className="text-gray-400 hover:text-gray-600 transition-colors text-sm shrink-0">
           ← 戻る
         </button>
         <input
