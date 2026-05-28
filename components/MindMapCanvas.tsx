@@ -580,6 +580,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   const updateStickyNotes = useCallback((updated: StickyNote[]) => {
     pushUndo();
+    localModifiedAt.current = Date.now();
     setStickyNotes(updated);
     onStickyNotesChangeRef.current?.(updated);
   }, [pushUndo]);
@@ -605,6 +606,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const commitStickyEdit = useCallback(() => {
     if (!editingStickyId) return;
     pushUndo();
+    localModifiedAt.current = Date.now();
     setStickyNotes(prev => {
       const updated = prev.map(n => n.id === editingStickyId ? { ...n, text: editingStickyText } : n);
       onStickyNotesChangeRef.current?.(updated);
@@ -725,6 +727,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     const sel = nodesRef.current.filter(n => selectedIds.has(n.id));
     if (sel.length < 2) return;
     pushUndo();
+    localModifiedAt.current = Date.now();
     const moved = updater(sel);
     const movedMap = new Map(moved.map(n => [n.id, n]));
     const updated = nodesRef.current.map(n => movedMap.get(n.id) ?? n);
@@ -763,6 +766,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     const maxW = Math.max(...sel.map(n => nodeWidth(n)));
     const maxH = Math.max(...sel.map(n => nodeHeight(n)));
     pushUndo();
+    localModifiedAt.current = Date.now();
     const updated = nodes.map(n => selectedIds.has(n.id) ? { ...n, customWidth: maxW, customHeight: maxH } : n);
     setNodes(updated);
     onNodesChange(updated);
@@ -772,6 +776,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     const sel = nodes.filter(n => selectedIds.has(n.id));
     if (sel.length < 1) return;
     pushUndo();
+    localModifiedAt.current = Date.now();
     const updated = nodes.map(n =>
       selectedIds.has(n.id)
         ? { ...n, customWidth: undefined, customHeight: undefined }
@@ -782,6 +787,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   }, [nodes, selectedIds, pushUndo, onNodesChange]);
 
   const toggleListItemChecked = useCallback((nodeId: string, itemId: string) => {
+    localModifiedAt.current = Date.now();
     const updated = nodesRef.current.map(n =>
       n.id !== nodeId ? n : {
         ...n,
@@ -800,6 +806,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     if (!editingListItem) return;
     const { nodeId, itemId, text } = editingListItem;
     // 空テキストでも削除しない（ゴミ箱ボタンで明示的に削除する）
+    localModifiedAt.current = Date.now();
     const updated = nodesRef.current.map(n =>
       n.id !== nodeId ? n : {
         ...n,
@@ -812,6 +819,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   }, [editingListItem]);
 
   const addListItem = useCallback((nodeId: string, parentItemId?: string) => {
+    localModifiedAt.current = Date.now();
     const newItem: ListItem = { id: `li-${Date.now()}`, text: "", checked: false };
     const updated = nodesRef.current.map(n => {
       if (n.id !== nodeId) return n;
@@ -827,6 +835,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   const deleteListItem = useCallback((nodeId: string, itemId: string) => {
     pushUndo();
+    localModifiedAt.current = Date.now();
     const updated = nodesRef.current.map(n =>
       n.id !== nodeId ? n : {
         ...n,
@@ -839,6 +848,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   const convertToList = useCallback((nodeId: string, listType: "checkbox" | "numbered" | "bullet" = "checkbox") => {
     pushUndo();
+    localModifiedAt.current = Date.now();
     const updated = nodesRef.current.map(n => {
       if (n.id !== nodeId) return n;
       return {
@@ -1001,6 +1011,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
           x: cx, y: cy, parentId: null, color: "#64748b",
           imageUrl: dataUrl, imageWidth: 200, imageHeight: 150,
         };
+        localModifiedAt.current = Date.now();
         setNodes(prev => { const updated = [...prev, newNode]; onNodesChangeRef.current(updated); return updated; });
         setSelectedIds(new Set([newNode.id]));
       };
@@ -1130,6 +1141,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     const onUp = (e: MouseEvent) => {
       if (ctxMenuDragRef.current) { ctxMenuDragRef.current = null; return; }
       if (draggingStickyRef.current) {
+        localModifiedAt.current = Date.now();
         onStickyNotesChangeRef.current?.(stickyNotesRef.current);
         setDraggingSticky(null);
         return;
@@ -1161,6 +1173,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         return;
       }
       if (draggingRef.current || resizingRef.current) {
+        localModifiedAt.current = Date.now();
         onNodesChangeRef.current(nodesRef.current);
         setDragging(null);
         setResizing(null);
@@ -1326,13 +1339,14 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const isBatch = selectedIds.size > 1 && ctxNode !== null && selectedIds.has(ctxNode?.id ?? "");
   const applyFormat = useCallback((updates: Partial<MindMapNode>) => {
     if (!nodeCtxMenu) return;
+    localModifiedAt.current = Date.now();
     if (isBatch) {
+      pushUndo();
       setNodes(prev => {
         const updated = prev.map(n => selectedIds.has(n.id) ? { ...n, ...updates } : n);
         onNodesChangeRef.current(updated);
         return updated;
       });
-      pushUndo();
     } else {
       setNodes(prev => {
         const updated = prev.map(n => n.id === nodeCtxMenu.nodeId ? { ...n, ...updates } : n);
@@ -1521,6 +1535,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                       onMouseDown={e => e.stopPropagation()}
                       onClick={e => {
                         e.stopPropagation();
+                        localModifiedAt.current = Date.now();
                         const upd = nodesRef.current.map(n => n.id === node.id ? { ...n, collapsed: !n.collapsed } : n);
                         setNodes(upd); onNodesChangeRef.current(upd);
                       }}
@@ -2380,6 +2395,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               <button
                 onClick={() => {
                   pushUndo();
+                  localModifiedAt.current = Date.now();
                   const upd = nodesRef.current.map(n => n.id === ctxNode.id ? { ...n, listItems: undefined, listType: undefined } : n);
                   setNodes(upd); onNodesChangeRef.current(upd);
                   setNodeCtxMenu(null);
