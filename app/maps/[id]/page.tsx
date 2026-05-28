@@ -15,6 +15,8 @@ import TabBar from "@/components/TabBar";
 import TabMapPickerModal from "@/components/TabMapPickerModal";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
 import { openTab, updateTabTitle } from "@/lib/tabs";
+import { exportToFMM, FMMFile } from "@/lib/fmm";
+import { APP_VERSION } from "@/lib/version";
 
 function groupByDate(entries: HistoryEntry[]) {
   const groups: { date: string; entries: HistoryEntry[] }[] = [];
@@ -131,6 +133,25 @@ export default function MapEditorPage() {
     pendingSave.current = { ...pendingSave.current, areas };
     scheduleSave();
   }, [scheduleSave]);
+
+  const handleExport = useCallback(() => {
+    if (!map) return;
+    exportToFMM(map, APP_VERSION);
+  }, [map]);
+
+  const handleImport = useCallback(async (fmm: FMMFile) => {
+    await flushSaves();
+    await updateDoc(doc(db, "maps", id), {
+      nodes: fmm.nodes,
+      stickyNotes: fmm.stickyNotes ?? [],
+      areas: fmm.areas ?? [],
+      edgeStyle: fmm.edgeStyle ?? "curve",
+      defaultShape: fmm.defaultShape ?? "pill",
+      nodeBorderWidth: fmm.nodeBorderWidth ?? 0,
+      mode: fmm.mode ?? "mindmap",
+      updatedAt: Date.now(),
+    });
+  }, [id, flushSaves]);
 
   const saveTitle = async (newTitle: string) => {
     updateTabTitle(id, newTitle);
@@ -418,6 +439,8 @@ export default function MapEditorPage() {
           initialHasUpdate={hasUpdate}
           initialLatestVersion={latestVersion}
           onBeforeReload={flushSaves}
+          onExport={handleExport}
+          onImport={handleImport}
         />
       )}
 
