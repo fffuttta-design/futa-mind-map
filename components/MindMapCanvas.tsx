@@ -104,6 +104,8 @@ function stripHtml(html: string): string {
 const NOTE_BODY_LINE_H = 18;
 const NOTE_BODY_VPAD = 16;
 const NOTE_BODY_MIN_LINES = 3;
+const NOTE_PREVIEW_LINES = 5; // 折りたたみ時のプレビュー行数
+const NOTE_PREVIEW_H = NOTE_PREVIEW_LINES * NOTE_BODY_LINE_H + NOTE_BODY_VPAD;
 
 // ── Markdown パーサー & レンダラー（ノート本文用） ──
 
@@ -260,7 +262,7 @@ function nodeWidth(node: MindMapNode): number {
 
 function nodeHeight(node: MindMapNode): number {
   if (node.noteContent !== undefined) {
-    if (node.collapsed) return LIST_HEADER_H;
+    if (node.collapsed) return LIST_HEADER_H + NOTE_PREVIEW_H;
     return node.customHeight ?? (LIST_HEADER_H + noteBodyHeight(node.noteContent));
   }
   if (node.listItems) {
@@ -437,6 +439,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   } | null>(null);
   const resizingAreaRef = useRef<{
     id: string;
+    corner: "se" | "sw" | "ne" | "nw";
     startCx: number; startCy: number;
     initX: number; initY: number;
     initW: number; initH: number;
@@ -594,11 +597,13 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     if (!svg || !noteBodyEditingId) { setNoteBodyEditorStyle(null); return; }
     const node = nodes.find(n => n.id === noteBodyEditingId);
     if (!node || node.noteContent === undefined) { setNoteBodyEditorStyle(null); return; }
+    // 編集中は collapsed を無視して全高で計算
+    const expandedNode = { ...node, collapsed: false };
     const r = svg.getBoundingClientRect();
     const sx = r.width / 2 + pan.x + node.x * zoom;
     const sy = r.height / 2 + pan.y + node.y * zoom;
-    const w = nodeWidth(node) * zoom;
-    const h = nodeHeight(node) * zoom;
+    const w = nodeWidth(expandedNode) * zoom;
+    const h = nodeHeight(expandedNode) * zoom;
     const bodyTop = sy - h / 2 + LIST_HEADER_H * zoom;
     const lines = Math.max(NOTE_BODY_MIN_LINES, noteBodyText.split("\n").length + 1);
     const bodyHeight = (lines * NOTE_BODY_LINE_H + NOTE_BODY_VPAD) * zoom;
@@ -1232,9 +1237,16 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       if (resizingAreaRef.current) {
         const ra = resizingAreaRef.current;
         const cp = getCanvasPos(e.clientX, e.clientY);
-        const newW = Math.max(120, ra.initW + (cp.x - ra.startCx));
-        const newH = Math.max(80, ra.initH + (cp.y - ra.startCy));
-        setAreas(prev => prev.map(a => a.id === ra.id ? { ...a, width: newW, height: newH } : a));
+        const dx = cp.x - ra.startCx, dy = cp.y - ra.startCy;
+        let nx = ra.initX, ny = ra.initY;
+        let nw = ra.initW, nh = ra.initH;
+        switch (ra.corner) {
+          case "se": nw = Math.max(120, ra.initW + dx); nh = Math.max(80, ra.initH + dy); break;
+          case "sw": nw = Math.max(120, ra.initW - dx); nh = Math.max(80, ra.initH + dy); nx = ra.initX + ra.initW - nw; break;
+          case "ne": nw = Math.max(120, ra.initW + dx); nh = Math.max(80, ra.initH - dy); ny = ra.initY + ra.initH - nh; break;
+          case "nw": nw = Math.max(120, ra.initW - dx); nh = Math.max(80, ra.initH - dy); nx = ra.initX + ra.initW - nw; ny = ra.initY + ra.initH - nh; break;
+        }
+        setAreas(prev => prev.map(a => a.id === ra.id ? { ...a, x: nx, y: ny, width: nw, height: nh } : a));
         return;
       }
       // エリアドラッグ（+ 内包ノード連動）
@@ -1458,7 +1470,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     };
   };
 
-  const onAreaResizeMouseDown = (e: React.MouseEvent, areaId: string) => {
+  const onAreaResizeMouseDown = (e: React.MouseEvent, areaId: string, corner: "se" | "sw" | "ne" | "nw") => {
     if (readOnly) return;
     e.stopPropagation();
     setSelectedAreaId(areaId);
@@ -1468,7 +1480,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     pushUndo();
     localModifiedAt.current = Date.now();
     resizingAreaRef.current = {
-      id: areaId, startCx: cp.x, startCy: cp.y,
+      id: areaId, corner, startCx: cp.x, startCy: cp.y,
       initX: area.x, initY: area.y, initW: area.width, initH: area.height,
     };
   };
@@ -1622,15 +1634,23 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                   }}
                   style={{ cursor: "move" }}
                 />
-                {/* リサイズハンドル（右下） */}
+                {/* リサイズハンドル（4隅） */}
                 {isSelArea && !readOnly && (
+                  [
+                    ["se", area.width, area.height, "nwse-resize"],
+                    ["sw", 0, area.height, "nesw-resize"],
+                    ["ne", area.width, 0, "nesw-resize"],
+                    ["nw", 0, 0, "nwse-resize"],
+                  ] as ["se"|"sw"|"ne"|"nw", number, number, string][]
+                ).map(([corner, hx, hy, cur]) => (
                   <rect
-                    x={area.width - 6} y={area.height - 6} width={12} height={12} rx={2}
+                    key={corner}
+                    x={hx - 6} y={hy - 6} width={12} height={12} rx={2}
                     fill="white" stroke={area.color} strokeWidth={1.5}
-                    onMouseDown={e => onAreaResizeMouseDown(e, area.id)}
-                    style={{ cursor: "nwse-resize", pointerEvents: "all" }}
+                    onMouseDown={e => onAreaResizeMouseDown(e, area.id, corner)}
+                    style={{ cursor: cur, pointerEvents: "all" }}
                   />
-                )}
+                ))}
               </g>
             );
           })}
@@ -1652,7 +1672,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
             const renderNode = isEditing
               ? { ...node, text: editText }
               : isNoteBodyEditing
-                ? { ...node, noteContent: noteBodyText }
+                ? { ...node, noteContent: noteBodyText, collapsed: false }
                 : node;
             const w = nodeWidth(renderNode), h = nodeHeight(renderNode);
             const isSelected = selectedIds.has(node.id);
@@ -1723,22 +1743,27 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                         {node.collapsed ? "▶" : "▼"}
                       </text>
                     </g>
-                    {/* ノート本文プレビュー */}
-                    {!node.collapsed && (
-                      <>
-                        <rect
-                          x={-w / 2 + 1} y={-h / 2 + LIST_HEADER_H}
-                          width={w - 2} height={h - LIST_HEADER_H}
-                          fill={noteBodyEditingId === node.id ? "rgba(249,250,251,0.97)" : "transparent"}
-                          onMouseDown={e => e.stopPropagation()}
-                          onDoubleClick={e => {
-                            e.stopPropagation();
-                            if (readOnly) return;
-                            setNoteBodyText(stripHtml(node.noteContent || ""));
-                            setNoteBodyEditingId(node.id);
-                          }}
-                          style={{ cursor: "text" }}
-                        />
+                    {/* ノート本文（collapsed=プレビュー / 展開=全文） */}
+                    <>
+                      {/* クリック/ダブルクリック受付 rect */}
+                      <rect
+                        x={-w / 2 + 1} y={-h / 2 + LIST_HEADER_H}
+                        width={w - 2} height={h - LIST_HEADER_H}
+                        fill={noteBodyEditingId === node.id ? "rgba(249,250,251,0.97)" : "transparent"}
+                        onMouseDown={e => e.stopPropagation()}
+                        onDoubleClick={e => {
+                          e.stopPropagation();
+                          if (readOnly) return;
+                          setNoteBodyText(stripHtml(node.noteContent || ""));
+                          setNoteBodyEditingId(node.id);
+                        }}
+                        style={{ cursor: "text" }}
+                      />
+                      {/* テキスト（clipPath でボディ領域にクリップ） */}
+                      <clipPath id={`cnote-${node.id}`}>
+                        <rect x={-w / 2} y={-h / 2 + LIST_HEADER_H} width={w} height={h - LIST_HEADER_H} />
+                      </clipPath>
+                      <g clipPath={`url(#cnote-${node.id})`}>
                         {node.noteContent
                           ? renderMdSVG(
                               parseMdLines(node.noteContent),
@@ -1757,8 +1782,25 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                             </text>
                           )
                         }
-                      </>
-                    )}
+                      </g>
+                      {/* 折りたたみ時：下部フェードアウト */}
+                      {node.collapsed && node.noteContent && (
+                        <>
+                          <defs>
+                            <linearGradient id={`nfade-${node.id}`} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="40%" stopColor="white" stopOpacity="0" />
+                              <stop offset="100%" stopColor="white" stopOpacity="1" />
+                            </linearGradient>
+                          </defs>
+                          <rect
+                            x={-w / 2 + 1} y={-h / 2 + LIST_HEADER_H + NOTE_PREVIEW_H * 0.35}
+                            width={w - 2} height={NOTE_PREVIEW_H * 0.65}
+                            fill={`url(#nfade-${node.id})`}
+                            style={{ pointerEvents: "none" }}
+                          />
+                        </>
+                      )}
+                    </>
                     {/* 優先度バッジ */}
                     {node.priority && (
                       <g style={{ pointerEvents: "none" }}>
