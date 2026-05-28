@@ -25,6 +25,8 @@ const LIST_HEADER_H = 36;
 const LIST_ITEM_H = 28;
 const LIST_ADD_H = 30;
 const LIST_MIN_W = 240;
+const NOTE_MIN_W = 240;
+const NOTE_CONTENT_MIN_H = 100;   // ノートコンテンツ部分の最小高さ
 const LINE_H = 20;
 const TEXT_PAD = 16;
 
@@ -98,6 +100,7 @@ function listItemH(node: MindMapNode): number {
 
 function nodeWidth(node: MindMapNode): number {
   if (node.customWidth) return node.customWidth;
+  if (node.noteContent !== undefined) return NOTE_MIN_W;
   if (node.listItems) return LIST_MIN_W;
   if (node.imageWidth) return node.imageWidth;
   const maxLineLen = Math.max(...node.text.split("\n").map(l => l.length), 1);
@@ -109,6 +112,10 @@ function nodeWidth(node: MindMapNode): number {
 }
 
 function nodeHeight(node: MindMapNode): number {
+  if (node.noteContent !== undefined) {
+    if (node.collapsed) return LIST_HEADER_H;
+    return node.customHeight ?? (LIST_HEADER_H + NOTE_CONTENT_MIN_H);
+  }
   if (node.listItems) {
     if (node.collapsed) return LIST_HEADER_H;
     const lih = listItemH(node);
@@ -253,6 +260,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const [stickyEditorStyle, setStickyEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [editingListItem, setEditingListItem] = useState<{ nodeId: string; itemId: string; text: string } | null>(null);
   const [listItemEditorStyle, setListItemEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState("");
+  const [noteEditorStyle, setNoteEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
   const [areas, setAreas] = useState<CanvasArea[]>(initialAreas ?? []);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
@@ -265,6 +275,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickyInputRef = useRef<HTMLTextAreaElement>(null);
   const listItemInputRef = useRef<HTMLInputElement>(null);
+  const noteInputRef = useRef<HTMLTextAreaElement>(null);
   const cancelEditRef = useRef(false);
   const copiedNodeRef = useRef<MindMapNode | null>(null);
   const ctxMenuDragRef = useRef<{ startMx: number; startMy: number; startSx: number; startSy: number } | null>(null);
@@ -429,6 +440,33 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingListItem?.itemId]);
+
+  // ノートエディタの位置計算
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !editingNoteId) { setNoteEditorStyle(null); return; }
+    const node = nodes.find(n => n.id === editingNoteId);
+    if (node?.noteContent === undefined) { setNoteEditorStyle(null); return; }
+    const r = svg.getBoundingClientRect();
+    const w = nodeWidth(node);
+    const h = nodeHeight(node);
+    const contentH = h - LIST_HEADER_H;
+    const sx = r.width / 2 + pan.x + node.x * zoom;
+    const sy = r.height / 2 + pan.y + node.y * zoom;
+    const nodeTop = sy - (h / 2) * zoom;
+    setNoteEditorStyle({
+      left: sx - (w / 2) * zoom,
+      top: nodeTop + LIST_HEADER_H * zoom,
+      width: w * zoom,
+      height: contentH * zoom,
+    });
+  }, [editingNoteId, nodes, pan, zoom]);
+
+  useEffect(() => {
+    if (editingNoteId && noteInputRef.current) {
+      noteInputRef.current.focus();
+    }
+  }, [editingNoteId]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -845,6 +883,62 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setNodes(updated);
     onNodesChangeRef.current(updated);
   }, [pushUndo]);
+
+  // ── ノートノード ──────────────────────────────────────────────
+  const commitNoteEdit = useCallback(() => {
+    if (!editingNoteId) return;
+    localModifiedAt.current = Date.now();
+    const updated = nodesRef.current.map(n =>
+      n.id === editingNoteId ? { ...n, noteContent: editingNoteText } : n
+    );
+    setNodes(updated);
+    onNodesChangeRef.current(updated);
+    setEditingNoteId(null);
+    setNoteEditorStyle(null);
+  }, [editingNoteId, editingNoteText]);
+
+  const convertToNote = useCallback((nodeId: string) => {
+    pushUndo();
+    localModifiedAt.current = Date.now();
+    const updated = nodesRef.current.map(n => {
+      if (n.id !== nodeId) return n;
+      return {
+        ...n,
+        customWidth: undefined,
+        customHeight: undefined,
+        listItems: undefined,
+        listType: undefined,
+        noteContent: "",
+      };
+    });
+    setNodes(updated);
+    onNodesChangeRef.current(updated);
+    setNodeCtxMenu(null);
+    setTimeout(() => {
+      setEditingNoteId(nodeId);
+      setEditingNoteText("");
+    }, 50);
+  }, [pushUndo]);
+
+  const addFloatingNoteNode = useCallback((cx: number, cy: number) => {
+    pushUndo();
+    localModifiedAt.current = Date.now();
+    const newNode: MindMapNode = {
+      id: `node-${Date.now()}`, text: "メモ",
+      x: cx, y: cy, parentId: null, color: "#6366f1",
+      noteContent: "",
+    };
+    const updated = [...nodesRef.current, newNode];
+    setNodes(updated);
+    onNodesChangeRef.current(updated);
+    setSelectedIds(new Set([newNode.id]));
+    setInsertMenu(null);
+    setTimeout(() => {
+      setEditingNoteId(newNode.id);
+      setEditingNoteText("");
+    }, 50);
+  }, [pushUndo]);
+  // ──────────────────────────────────────────────────────────────
 
   /** 選択中のノードを囲むエリアを作成 */
   const createAreaFromSelection = useCallback(() => {
@@ -1323,6 +1417,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     if (insertMenu) { setInsertMenu(null); setInsertImageMode(false); return; }
     if (editingId) commitEdit();
     if (editingStickyId) commitStickyEdit();
+    if (editingNoteId) commitNoteEdit();
     setSelectedStickyId(null);
 
     // 相談: Shift+ドラッグ → ラバーバンド範囲選択
@@ -1525,7 +1620,100 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                 }}
                 style={{ cursor: readOnly ? "default" : "pointer" }}
               >
-                {node.listItems ? (
+                {node.noteContent !== undefined ? (
+                  // ── ノートノード ──
+                  <>
+                    {/* 全体背景 */}
+                    <rect
+                      x={-w / 2} y={-h / 2} width={w} height={h} rx={8}
+                      fill="white"
+                      stroke={isSelected ? "#6366f1" : nodeBorderWidth > 0 ? "#000000" : "#e2e8f0"}
+                      strokeWidth={isSelected ? 2 : nodeBorderWidth > 0 ? nodeBorderWidth : 1}
+                    />
+                    {/* ヘッダー背景（角丸は上のみ） */}
+                    <rect x={-w / 2} y={-h / 2} width={w} height={LIST_HEADER_H} rx={8} fill={node.color} />
+                    <rect x={-w / 2} y={-h / 2 + LIST_HEADER_H - 8} width={w} height={8} fill={node.color} />
+                    {/* ヘッダー文字 */}
+                    {editingId !== node.id && (
+                      <>
+                        <text
+                          x={-w / 2 + 28} y={-h / 2 + LIST_HEADER_H / 2}
+                          dominantBaseline="central" fontSize={13} fontWeight="600" fill="white"
+                          style={{ pointerEvents: "none" }}
+                        >
+                          {node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text}
+                        </text>
+                        <text
+                          x={-w / 2 + 12} y={-h / 2 + LIST_HEADER_H / 2}
+                          dominantBaseline="central" fontSize={13}
+                          style={{ pointerEvents: "none" }}
+                        >📝</text>
+                      </>
+                    )}
+                    {/* 折りたたみトグル */}
+                    <g
+                      transform={`translate(${w / 2 - 16}, ${-h / 2 + LIST_HEADER_H / 2})`}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => {
+                        e.stopPropagation();
+                        localModifiedAt.current = Date.now();
+                        const upd = nodesRef.current.map(n => n.id === node.id ? { ...n, collapsed: !n.collapsed } : n);
+                        setNodes(upd); onNodesChangeRef.current(upd);
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <circle r={10} fill="rgba(255,255,255,0.2)" />
+                      <text textAnchor="middle" dominantBaseline="central" fontSize={9} fill="white" style={{ pointerEvents: "none" }}>
+                        {node.collapsed ? "▶" : "▼"}
+                      </text>
+                    </g>
+                    {/* コンテンツエリア（折りたたみ時は非表示） */}
+                    {!node.collapsed && (() => {
+                      const contentH = h - LIST_HEADER_H;
+                      const isEditing = editingNoteId === node.id;
+                      const lines = (node.noteContent ?? "").split("\n");
+                      const hasContent = (node.noteContent ?? "").trim().length > 0;
+                      return (
+                        <>
+                          {/* クリック領域（textarea overlay を起動） */}
+                          <rect
+                            x={-w / 2 + 1} y={-h / 2 + LIST_HEADER_H}
+                            width={w - 2} height={contentH - 1}
+                            fill="transparent"
+                            onMouseDown={e => e.stopPropagation()}
+                            onClick={e => {
+                              e.stopPropagation();
+                              if (!readOnly && !isEditing) {
+                                setEditingNoteId(node.id);
+                                setEditingNoteText(node.noteContent ?? "");
+                              }
+                            }}
+                            style={{ cursor: isEditing ? "default" : "text" }}
+                          />
+                          {/* テキスト表示（編集中は textarea overlay が覆う） */}
+                          {!isEditing && (
+                            hasContent ? lines.slice(0, Math.floor((contentH - 16) / 18)).map((line, i) => (
+                              <text
+                                key={i}
+                                x={-w / 2 + 10} y={-h / 2 + LIST_HEADER_H + 14 + i * 18}
+                                fontSize={12} fill="#374151"
+                                style={{ pointerEvents: "none" }}
+                              >
+                                {line.length > 26 ? line.slice(0, 26) + "…" : line}
+                              </text>
+                            )) : (
+                              <text
+                                x={-w / 2 + 10} y={-h / 2 + LIST_HEADER_H + 18}
+                                fontSize={12} fill="#d1d5db" fontStyle="italic"
+                                style={{ pointerEvents: "none" }}
+                              >クリックして編集...</text>
+                            )
+                          )}
+                        </>
+                      );
+                    })()}
+                  </>
+                ) : node.listItems ? (
                   // ── コンテナ（リスト）ノード ──
                   <>
                     {/* 全体背景 */}
@@ -2105,6 +2293,45 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         />
       )}
 
+      {/* ノートノード コンテンツ編集オーバーレイ */}
+      {!readOnly && editingNoteId && noteEditorStyle && (
+        <textarea
+          ref={noteInputRef}
+          value={editingNoteText}
+          onChange={e => setEditingNoteText(e.target.value)}
+          onBlur={commitNoteEdit}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === "Escape") { e.preventDefault(); commitNoteEdit(); }
+            // Ctrl+A はこのエリア内のみ
+            if (e.ctrlKey && (e.key === "a" || e.key === "A")) {
+              e.preventDefault();
+              (e.target as HTMLTextAreaElement).select();
+            }
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          placeholder="メモを入力... (Escで確定)"
+          style={{
+            position: "absolute",
+            left: noteEditorStyle.left,
+            top: noteEditorStyle.top,
+            width: noteEditorStyle.width,
+            height: noteEditorStyle.height,
+            fontSize: 12 * zoom,
+            lineHeight: 1.6,
+            padding: `${6 * zoom}px ${8 * zoom}px`,
+            background: "white",
+            border: "none",
+            outline: "none",
+            resize: "none",
+            color: "#374151",
+            borderRadius: `0 0 ${6 * zoom}px ${6 * zoom}px`,
+            zIndex: 20,
+            boxSizing: "border-box",
+          }}
+        />
+      )}
+
       {!readOnly && selectedId && toolbarPos && !editingId && !nodes.find(n => n.id === selectedId)?.imageWidth && (
         <NodeToolbar
           node={nodes.find(n => n.id === selectedId)!}
@@ -2277,6 +2504,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
             <>
               <button onClick={() => addFloatingTextNode(insertMenu.cx, insertMenu.cy)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">📝 テキスト</button>
               <button onClick={() => addFloatingNode(insertMenu.cx, insertMenu.cy)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">＋ ノード</button>
+              <button onClick={() => addFloatingNoteNode(insertMenu.cx, insertMenu.cy)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">📒 ノートノード</button>
               <button onClick={() => addStickyNote(insertMenu.cx, insertMenu.cy)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">📌 付箋</button>
               <button onClick={() => addArea(insertMenu.cx, insertMenu.cy)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">🗂️ エリア</button>
               <button onClick={() => setInsertImageMode(true)} className="px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">🖼️ 画像</button>
@@ -2406,25 +2634,47 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
             </div>
           )}
 
-          {/* リスト変換 */}
-          {!ctxNode.listItems && (
-            <div>
-              <p className="text-xs text-gray-400 mb-1 px-1">リストに変換</p>
-              <div className="flex gap-1">
-                {([
-                  { type: "checkbox" as const, label: "☑", title: "チェック" },
-                  { type: "numbered"  as const, label: "1.", title: "番号付き" },
-                  { type: "bullet"    as const, label: "●", title: "箇条書き" },
-                ]).map(opt => (
-                  <button
-                    key={opt.type}
-                    title={opt.title}
-                    onClick={() => { convertToList(nodeCtxMenu!.nodeId, opt.type); setNodeCtxMenu(null); }}
-                    className="flex-1 h-8 rounded-lg border border-gray-200 text-sm text-gray-600 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                  >{opt.label} {opt.title}</button>
-                ))}
+          {/* リスト変換 / ノート変換 */}
+          {!ctxNode.listItems && ctxNode.noteContent === undefined && (
+            <div className="flex flex-col gap-1.5">
+              <div>
+                <p className="text-xs text-gray-400 mb-1 px-1">リストに変換</p>
+                <div className="flex gap-1">
+                  {([
+                    { type: "checkbox" as const, label: "☑", title: "チェック" },
+                    { type: "numbered"  as const, label: "1.", title: "番号付き" },
+                    { type: "bullet"    as const, label: "●", title: "箇条書き" },
+                  ]).map(opt => (
+                    <button
+                      key={opt.type}
+                      title={opt.title}
+                      onClick={() => { convertToList(nodeCtxMenu!.nodeId, opt.type); setNodeCtxMenu(null); }}
+                      className="flex-1 h-8 rounded-lg border border-gray-200 text-sm text-gray-600 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                    >{opt.label} {opt.title}</button>
+                  ))}
+                </div>
               </div>
+              <button
+                onClick={() => convertToNote(nodeCtxMenu!.nodeId)}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 border border-gray-200 hover:border-indigo-300 transition-colors"
+              >
+                <span>📒</span><span>ノートノードに変換</span>
+              </button>
             </div>
+          )}
+          {ctxNode.noteContent !== undefined && (
+            <button
+              onClick={() => {
+                pushUndo();
+                localModifiedAt.current = Date.now();
+                const upd = nodesRef.current.map(n => n.id === ctxNode.id ? { ...n, noteContent: undefined } : n);
+                setNodes(upd); onNodesChangeRef.current(upd);
+                setNodeCtxMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+            >
+              <span>↩️</span><span>通常ノードに戻す</span>
+            </button>
           )}
           {ctxNode.listItems && (
             <>
