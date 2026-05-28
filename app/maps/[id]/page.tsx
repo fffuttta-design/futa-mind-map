@@ -74,6 +74,10 @@ export default function MapEditorPage() {
   }, [user, loading, router]);
 
   useEffect(() => {
+    setMap(null);
+  }, [id]);
+
+  useEffect(() => {
     if (!id) return;
     tabRegistered.current = false;
     const unsub = onSnapshot(doc(db, "maps", id), (snap) => {
@@ -336,8 +340,9 @@ export default function MapEditorPage() {
             </div>
           )}
           {historyPreview
-            ? <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly edgeStyle={edgeStyle} />
+            ? <MindMapCanvas key={`${id}-history`} initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly edgeStyle={edgeStyle} />
             : <MindMapCanvas
+                key={id}
                 initialNodes={map.nodes}
                 onNodesChange={saveNodes}
                 initialStickyNotes={map.stickyNotes}
