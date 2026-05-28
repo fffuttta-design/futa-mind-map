@@ -104,7 +104,7 @@ function stripHtml(html: string): string {
 const NOTE_BODY_LINE_H = 18;
 const NOTE_BODY_VPAD = 16;
 const NOTE_BODY_MIN_LINES = 3;
-const NOTE_PREVIEW_LINES = 5; // 折りたたみ時のプレビュー行数
+const NOTE_PREVIEW_LINES = 3; // 折りたたみ時のプレビュー行数（展開時と明確な差が出るよう3行に設定）
 const NOTE_PREVIEW_H = NOTE_PREVIEW_LINES * NOTE_BODY_LINE_H + NOTE_BODY_VPAD;
 
 // ── Markdown パーサー & レンダラー（ノート本文用） ──
@@ -1733,6 +1733,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                       onMouseDown={e => e.stopPropagation()}
                       onClick={e => {
                         e.stopPropagation();
+                        localModifiedAt.current = Date.now();
                         const upd = nodesRef.current.map(n => n.id === node.id ? { ...n, collapsed: !n.collapsed } : n);
                         setNodes(upd); onNodesChangeRef.current(upd);
                       }}
