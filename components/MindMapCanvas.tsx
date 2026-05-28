@@ -901,8 +901,13 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   useEffect(() => {
     if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
-      // INPUT要素（リストアイテム編集など）ではグローバルショートカットを無効化
-      if ((e.target as HTMLElement).tagName === "INPUT") return;
+      // INPUT/TEXTAREA/contentEditable要素ではグローバルショートカットを無効化
+      const active = document.activeElement as HTMLElement | null;
+      if (active && (
+        active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        active.contentEditable === "true"
+      )) return;
       // Ctrl+A: ブラウザ全選択を常に防止（テキスト編集中はエリア内テキストを全選択）
       // ※ setEditingId 後・再レンダリング前の僅かな window でも防止できるよう早期ガード
       if (e.ctrlKey && (e.key === "a" || e.key === "A")) {
