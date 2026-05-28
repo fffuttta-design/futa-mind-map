@@ -12,17 +12,42 @@ interface Props {
 export default function NotePanel({ node, onUpdate, onClose }: Props) {
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const initializedId = useRef<string>("");
+  const onUpdateRef = useRef(onUpdate);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [popup, setPopup] = useState<{ x: number; y: number } | null>(null);
   const [boldActive, setBoldActive] = useState(false);
   const [italicActive, setItalicActive] = useState(false);
 
+  // onUpdate は毎レンダリングで変わるため ref で保持（stale closure 対策）
+  useEffect(() => { onUpdateRef.current = onUpdate; }, [onUpdate]);
+
+  // ノード変更時のみ初期化
   useEffect(() => {
-    if (editorRef.current && initializedId.current !== node.id) {
+    if (editorRef.current) {
       editorRef.current.innerHTML = node.noteContent ?? "";
-      initializedId.current = node.id;
     }
-  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.id]);
+
+  // アンマウント時に残っている保存を確定
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        if (editorRef.current) {
+          onUpdateRef.current(editorRef.current.innerHTML);
+        }
+      }
+    };
+  }, []);
+
+  const scheduleSave = useCallback(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (editorRef.current) onUpdateRef.current(editorRef.current.innerHTML);
+      saveTimerRef.current = null;
+    }, 1000);
+  }, []);
 
   const syncFormatState = useCallback(() => {
     setBoldActive(document.queryCommandState("bold"));
@@ -49,9 +74,9 @@ export default function NotePanel({ node, onUpdate, onClose }: Props) {
   const applyFormat = useCallback((cmd: "bold" | "italic") => {
     editorRef.current?.focus();
     document.execCommand(cmd);
-    if (editorRef.current) onUpdate(editorRef.current.innerHTML);
+    scheduleSave();
     setTimeout(handleSelectionChange, 10);
-  }, [onUpdate, handleSelectionChange]);
+  }, [scheduleSave, handleSelectionChange]);
 
   return (
     <div className="w-72 bg-white border-l border-gray-100 flex flex-col overflow-hidden shrink-0">
@@ -69,10 +94,17 @@ export default function NotePanel({ node, onUpdate, onClose }: Props) {
           contentEditable
           suppressContentEditableWarning
           data-placeholder="ノートを入力..."
-          onInput={() => { if (editorRef.current) onUpdate(editorRef.current.innerHTML); }}
+          onInput={scheduleSave}
           onMouseUp={handleSelectionChange}
           onKeyUp={handleSelectionChange}
-          onBlur={() => setTimeout(() => setPopup(null), 200)}
+          onBlur={() => {
+            if (saveTimerRef.current) {
+              clearTimeout(saveTimerRef.current);
+              saveTimerRef.current = null;
+              if (editorRef.current) onUpdateRef.current(editorRef.current.innerHTML);
+            }
+            setTimeout(() => setPopup(null), 200);
+          }}
           className="outline-none text-sm text-gray-700 leading-relaxed"
           style={{ whiteSpace: "pre-wrap", minHeight: "200px" }}
         />

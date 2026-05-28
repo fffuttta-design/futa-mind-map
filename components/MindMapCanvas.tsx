@@ -392,8 +392,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       const sx = r.width / 2 + pan.x + node.x * zoom;
       const sy = r.height / 2 + pan.y + node.y * zoom;
       const w = nodeWidth(node) * zoom;
-      if (node.listItems) {
-        // リストノードはヘッダー部分のみ
+      if (node.listItems || node.noteContent !== undefined) {
+        // リスト/ノートはヘッダー部分のみ編集
         const nodeTop = sy - (nodeHeight(node) / 2) * zoom;
         setEditorStyle({ left: sx - w / 2 + 30 * zoom, top: nodeTop, width: w * 0.65, height: LIST_HEADER_H * zoom, fontSize: 13 * zoom });
       } else {

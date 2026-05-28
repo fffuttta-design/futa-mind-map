@@ -344,6 +344,7 @@ export default function MapEditorPage() {
           const noteNode = map.nodes.find(n => n.id === noteOpenNodeId);
           return noteNode ? (
             <NotePanel
+              key={noteOpenNodeId}
               node={noteNode}
               onUpdate={(content) => updateNoteContent(noteOpenNodeId, content)}
               onClose={() => setNoteOpenNodeId(null)}
