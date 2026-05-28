@@ -48,6 +48,7 @@ export default function MapEditorPage() {
   const [manualSaveName, setManualSaveName] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "pending" | "saving" | "ok" | "error">("idle");
+  const [saveError, setSaveError] = useState<string>("");
   const { hasUpdate, latestVersion } = useVersionCheck();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<{ exportSVG: () => void; exportPNG: () => void } | null>(null);
@@ -105,9 +106,11 @@ export default function MapEditorPage() {
       setSaveStatus("ok");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.error("[fmm:save] ❌ FAILED", e);
       pendingSave.current = p;  // 失敗したら戻す
       setSaveStatus("error");
+      setSaveError(msg);
     }
     if (p.nodes && now - lastHistorySave.current >= 60 * 1000) {
       lastHistorySave.current = now;
@@ -239,7 +242,11 @@ export default function MapEditorPage() {
           {saveStatus === "pending" && <span className="text-xs text-yellow-400">● 保存待ち</span>}
           {saveStatus === "saving" && <span className="text-xs text-blue-400">● 保存中...</span>}
           {saveStatus === "ok" && <span className="text-xs text-green-500">✓ 保存済み</span>}
-          {saveStatus === "error" && <span className="text-xs text-red-500 font-semibold">✕ 保存失敗!</span>}
+          {saveStatus === "error" && (
+            <span className="text-xs text-red-500 font-semibold" title={saveError}>
+              ✕ 保存失敗: {saveError.slice(0, 60)}
+            </span>
+          )}
         </div>
       </header>
 
