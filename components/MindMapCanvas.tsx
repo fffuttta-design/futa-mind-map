@@ -343,19 +343,19 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    // ローカル編集から2.5秒以内はFirestoreスナップショットで上書きしない
+    // ローカル編集から8秒以内はFirestoreスナップショットで上書きしない
     // （undo/redo直後に古いスナップショットが届いて状態が逆戻りするのを防ぐ）
-    if (Date.now() - localModifiedAt.current < 2500) return;
+    if (Date.now() - localModifiedAt.current < 8000) return;
     setNodes(initialNodes);
   }, [initialNodes]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    if (Date.now() - localModifiedAt.current < 2500) return;
+    if (Date.now() - localModifiedAt.current < 8000) return;
     setStickyNotes(initialStickyNotes ?? []);
   }, [initialStickyNotes]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    if (Date.now() - localModifiedAt.current < 2500) return;
+    if (Date.now() - localModifiedAt.current < 8000) return;
     setAreas(initialAreas ?? []);
   }, [initialAreas]);
 
@@ -1072,6 +1072,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       if (editingStickyId) { if (e.key === "Escape") setEditingStickyId(null); return; }
       if (selectedStickyId) {
         if (e.key === "Delete") {
+          pushUndo();
+          localModifiedAt.current = Date.now();
           setStickyNotes(prev => { const updated = prev.filter(n => n.id !== selectedStickyId); onStickyNotesChangeRef.current?.(updated); return updated; });
           setSelectedStickyId(null);
         }
@@ -1081,6 +1083,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       if (selectedAreaId) {
         if (e.key === "Delete") {
           pushUndo();
+          localModifiedAt.current = Date.now();
           const updated = areasRef.current.filter(a => a.id !== selectedAreaId);
           setAreas(updated);
           onAreasChangeRef.current?.(updated);
@@ -1157,6 +1160,10 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
       return { x: (cx - r.left - p.x - r.width / 2) / z, y: (cy - r.top - p.y - r.height / 2) / z };
     };
     const onMove = (e: MouseEvent) => {
+      // ドラッグ・リサイズ中はローカル編集ガードを常に最新に保つ（長時間ドラッグでguard期限切れを防ぐ）
+      if (draggingAreaRef.current || resizingAreaRef.current || draggingRef.current || resizingRef.current || draggingStickyRef.current) {
+        localModifiedAt.current = Date.now();
+      }
       // 右クリックメニュードラッグ
       if (ctxMenuDragRef.current) {
         const d = ctxMenuDragRef.current;
@@ -1290,6 +1297,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         return;
       }
       if (draggingAreaRef.current || resizingAreaRef.current) {
+        localModifiedAt.current = Date.now();
         onAreasChangeRef.current?.(areasRef.current);
         if (draggingAreaRef.current && draggingAreaRef.current.containedNodeInits.size > 0) {
           onNodesChangeRef.current(nodesRef.current);
@@ -2231,7 +2239,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         <textarea
           ref={inputRef}
           value={editText}
-          onChange={e => setEditText(e.target.value)}
+          onChange={e => { localModifiedAt.current = Date.now(); setEditText(e.target.value); }}
           onBlur={commitEdit}
           onKeyDown={e => {
             // Ctrl+A はこのテキストエリア内だけを全選択（アプリ全体の選択を防ぐ）
@@ -2267,7 +2275,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
           ref={listItemInputRef}
           type="text"
           value={editingListItem.text}
-          onChange={e => setEditingListItem(prev => prev ? { ...prev, text: e.target.value } : null)}
+          onChange={e => { localModifiedAt.current = Date.now(); setEditingListItem(prev => prev ? { ...prev, text: e.target.value } : null); }}
           onBlur={commitListItemEdit}
           onKeyDown={e => {
             e.stopPropagation();
@@ -2298,7 +2306,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         <textarea
           ref={noteInputRef}
           value={editingNoteText}
-          onChange={e => setEditingNoteText(e.target.value)}
+          onChange={e => { localModifiedAt.current = Date.now(); setEditingNoteText(e.target.value); }}
           onBlur={commitNoteEdit}
           onKeyDown={e => {
             e.stopPropagation();
