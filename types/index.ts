@@ -29,6 +29,7 @@ export interface MindMapNode {
   customWidth?: number;
   customHeight?: number;
   lineMessage?: LineMessageData;
+  noteContent?: string;
   isCheckbox?: boolean;
   checked?: boolean;
   priority?: number;

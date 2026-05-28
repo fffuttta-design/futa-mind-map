@@ -7,6 +7,7 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { MindMap, MindMapNode, StickyNote, CanvasArea, LineMessageData, HistoryEntry } from "@/types";
 import MindMapCanvas from "@/components/MindMapCanvas";
+import NotePanel from "@/components/NotePanel";
 import LineMessagePanel from "@/components/LineMessagePanel";
 import LinePreviewModal from "@/components/LinePreviewModal";
 import SettingsModal from "@/components/SettingsModal";
@@ -48,6 +49,7 @@ export default function MapEditorPage() {
   const [manualSaveName, setManualSaveName] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "pending" | "saving" | "ok" | "error">("idle");
+  const [noteOpenNodeId, setNoteOpenNodeId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string>("");
   const { hasUpdate, latestVersion } = useVersionCheck();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -146,6 +148,12 @@ export default function MapEditorPage() {
     pendingSave.current = { ...pendingSave.current, stickyNotes };
     scheduleSave();
   }, [scheduleSave]);
+
+  const updateNoteContent = useCallback((nodeId: string, noteContent: string) => {
+    if (!map) return;
+    const updated = map.nodes.map(n => n.id === nodeId ? { ...n, noteContent } : n);
+    saveNodes(updated);
+  }, [map, saveNodes]);
 
   const saveAreas = useCallback((areas: CanvasArea[]) => {
     pendingSave.current = { ...pendingSave.current, areas };
@@ -290,6 +298,7 @@ export default function MapEditorPage() {
                 initialAreas={map.areas}
                 onAreasChange={saveAreas}
                 onSelectionChange={setSelectedNodeId}
+                onNoteOpen={setNoteOpenNodeId}
                 mode={map.mode ?? "mindmap"}
                 exportRef={exportRef}
                 edgeStyle={edgeStyle}
@@ -330,6 +339,17 @@ export default function MapEditorPage() {
             />
           </div>
         )}
+
+        {noteOpenNodeId && (() => {
+          const noteNode = map.nodes.find(n => n.id === noteOpenNodeId);
+          return noteNode ? (
+            <NotePanel
+              node={noteNode}
+              onUpdate={(content) => updateNoteContent(noteOpenNodeId, content)}
+              onClose={() => setNoteOpenNodeId(null)}
+            />
+          ) : null;
+        })()}
 
         {showHistory && (
           <div className="w-64 bg-white border-l border-gray-100 flex flex-col overflow-hidden shrink-0">

@@ -18,6 +18,7 @@ interface Props {
   nodeBorderWidth?: number;
   initialAreas?: CanvasArea[];
   onAreasChange?: (areas: CanvasArea[]) => void;
+  onNoteOpen?: (nodeId: string) => void;
 }
 
 const NODE_H = 34;
@@ -96,8 +97,15 @@ function listItemH(node: MindMapNode): number {
   return Math.max(24, (node.listFontSize ?? 12) * 2.0);
 }
 
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+}
+
+const NOTE_BODY_H = 72;
+
 function nodeWidth(node: MindMapNode): number {
   if (node.customWidth) return node.customWidth;
+  if (node.noteContent !== undefined) return LIST_MIN_W;
   if (node.listItems) return LIST_MIN_W;
   if (node.imageWidth) return node.imageWidth;
   const maxLineLen = Math.max(...node.text.split("\n").map(l => l.length), 1);
@@ -109,6 +117,10 @@ function nodeWidth(node: MindMapNode): number {
 }
 
 function nodeHeight(node: MindMapNode): number {
+  if (node.noteContent !== undefined) {
+    if (node.collapsed) return LIST_HEADER_H;
+    return node.customHeight ?? (LIST_HEADER_H + NOTE_BODY_H);
+  }
   if (node.listItems) {
     if (node.collapsed) return LIST_HEADER_H;
     const lih = listItemH(node);
@@ -209,7 +221,7 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${nodeEls}\n</svg>`;
 }
 
-export default function MindMapCanvas({ initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, initialAreas, onAreasChange }: Props) {
+export default function MindMapCanvas({ initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, initialAreas, onAreasChange, onNoteOpen }: Props) {
   const [nodes, setNodes] = useState<MindMapNode[]>(initialNodes);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1486,7 +1498,82 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                 }}
                 style={{ cursor: readOnly ? "default" : "pointer" }}
               >
-                {node.listItems ? (
+                {node.noteContent !== undefined ? (
+                  // ── ノートノード ──
+                  <>
+                    <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={8}
+                      fill="white"
+                      stroke={isSelected ? "#6366f1" : nodeBorderWidth > 0 ? "#000000" : "#e2e8f0"}
+                      strokeWidth={isSelected ? 2 : nodeBorderWidth > 0 ? nodeBorderWidth : 1}
+                    />
+                    <rect x={-w / 2} y={-h / 2} width={w} height={LIST_HEADER_H} rx={8} fill={node.color} />
+                    <rect x={-w / 2} y={-h / 2 + LIST_HEADER_H - 8} width={w} height={8} fill={node.color} />
+                    {editingId !== node.id && (
+                      <text x={-w / 2 + 10} y={-h / 2 + LIST_HEADER_H / 2}
+                        dominantBaseline="central" fontSize={13} fontWeight="600" fill="white"
+                        style={{ pointerEvents: "none" }}
+                      >
+                        {node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text}
+                      </text>
+                    )}
+                    {/* 折りたたみトグル */}
+                    <g
+                      transform={`translate(${w / 2 - 16}, ${-h / 2 + LIST_HEADER_H / 2})`}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => {
+                        e.stopPropagation();
+                        const upd = nodesRef.current.map(n => n.id === node.id ? { ...n, collapsed: !n.collapsed } : n);
+                        setNodes(upd); onNodesChangeRef.current(upd);
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <circle r={10} fill="rgba(255,255,255,0.2)" />
+                      <text textAnchor="middle" dominantBaseline="central" fontSize={9} fill="white" style={{ pointerEvents: "none" }}>
+                        {node.collapsed ? "▶" : "▼"}
+                      </text>
+                    </g>
+                    {/* ノート本文プレビュー */}
+                    {!node.collapsed && (
+                      <>
+                        <rect
+                          x={-w / 2 + 1} y={-h / 2 + LIST_HEADER_H}
+                          width={w - 2} height={NOTE_BODY_H}
+                          fill="transparent"
+                          onMouseDown={e => e.stopPropagation()}
+                          onClick={e => { e.stopPropagation(); onNoteOpen?.(node.id); }}
+                          style={{ cursor: "pointer" }}
+                        />
+                        <text
+                          x={-w / 2 + 10} y={-h / 2 + LIST_HEADER_H + 14}
+                          fontSize={11} fill={node.noteContent ? "#475569" : "#cbd5e1"}
+                          fontStyle={node.noteContent ? "normal" : "italic"}
+                          style={{ pointerEvents: "none" }}
+                        >
+                          {(() => {
+                            const plain = stripHtml(node.noteContent || "");
+                            const preview = plain || "クリックしてノートを編集...";
+                            const lines = preview.split("\n").slice(0, 3);
+                            return lines.map((line, i) => (
+                              <tspan key={i} x={-w / 2 + 10} dy={i === 0 ? 0 : 16}>
+                                {line.length > 28 ? line.slice(0, 28) + "…" : line}
+                              </tspan>
+                            ));
+                          })()}
+                        </text>
+                      </>
+                    )}
+                    {/* 優先度バッジ */}
+                    {node.priority && (
+                      <g style={{ pointerEvents: "none" }}>
+                        <circle cx={-w / 2 + 10} cy={-h / 2 + 10} r={9} fill={PRIORITY_COLOR} />
+                        <text x={-w / 2 + 10} y={-h / 2 + 10} textAnchor="middle" dominantBaseline="central"
+                          fontSize={10} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>
+                          {node.priority}
+                        </text>
+                      </g>
+                    )}
+                  </>
+                ) : node.listItems ? (
                   // ── コンテナ（リスト）ノード ──
                   <>
                     {/* 全体背景 */}
@@ -2365,8 +2452,31 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
             </div>
           )}
 
+          {/* ノート */}
+          {ctxNode.noteContent === undefined ? (
+            <button
+              onClick={() => {
+                applyFormat({ noteContent: "" });
+                onNoteOpen?.(ctxNode.id);
+                setNodeCtxMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+            ><span>📝</span><span>ノートを追加</span></button>
+          ) : (
+            <>
+              <button
+                onClick={() => { onNoteOpen?.(ctxNode.id); setNodeCtxMenu(null); }}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+              ><span>📝</span><span>ノートを開く</span></button>
+              <button
+                onClick={() => { applyFormat({ noteContent: undefined }); setNodeCtxMenu(null); }}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 flex items-center gap-2"
+              ><span>🗑</span><span>ノートを削除</span></button>
+            </>
+          )}
+
           {/* リスト変換 */}
-          {!ctxNode.listItems && (
+          {!ctxNode.listItems && ctxNode.noteContent === undefined && (
             <div>
               <p className="text-xs text-gray-400 mb-1 px-1">リストに変換</p>
               <div className="flex gap-1">
