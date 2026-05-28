@@ -101,7 +101,8 @@ export default function MapEditorPage() {
     console.log("[fmm:save] writing", { fields: Object.keys(p), nodeCount: p.nodes?.length, id });
     setSaveStatus("saving");
     try {
-      await updateDoc(doc(db, "maps", id), { ...p, updatedAt: now });
+      const clean = JSON.parse(JSON.stringify({ ...p, updatedAt: now }));
+      await updateDoc(doc(db, "maps", id), clean);
       console.log("[fmm:save] ✅ success");
       setSaveStatus("ok");
       setTimeout(() => setSaveStatus("idle"), 2000);
