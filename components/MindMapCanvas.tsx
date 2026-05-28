@@ -247,6 +247,37 @@ function renderMdSVG(
   return elements;
 }
 
+/** DOM ポップアップ用 Markdown → JSX レンダラー */
+function renderMdHTML(lines: MdLine[]): React.ReactNode[] {
+  return lines.map((line, i) => {
+    if (line.type === "empty") return <div key={i} style={{ height: 5 }} />;
+    const runEls = line.runs.map((run, ri) => {
+      let content: React.ReactNode = run.text;
+      if (run.bold) content = <strong key={ri} style={{ fontWeight: 700 }}>{content}</strong>;
+      else if (run.italic) content = <em key={ri}>{content}</em>;
+      else if (run.underline) content = <u key={ri}>{content}</u>;
+      else content = <span key={ri}>{content}</span>;
+      return content;
+    });
+    const indent = line.indent * 14;
+    switch (line.type) {
+      case "h1":
+        return <div key={i} style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginTop: 6, marginBottom: 2, lineHeight: "1.3" }}>{runEls}</div>;
+      case "h2":
+        return <div key={i} style={{ fontSize: 12, fontWeight: 700, color: "#1e293b", marginTop: 4, marginBottom: 1, lineHeight: "1.3" }}>{runEls}</div>;
+      case "bullet":
+        return (
+          <div key={i} style={{ fontSize: 11, color: "#475569", lineHeight: "1.6", paddingLeft: indent + 12, display: "flex", gap: 4 }}>
+            <span style={{ flexShrink: 0, marginTop: 1 }}>•</span>
+            <span>{runEls}</span>
+          </div>
+        );
+      default:
+        return <div key={i} style={{ fontSize: 11, color: "#475569", lineHeight: "1.6" }}>{runEls}</div>;
+    }
+  });
+}
+
 function nodeWidth(node: MindMapNode): number {
   if (node.customWidth) return node.customWidth;
   if (node.noteContent !== undefined) return LIST_MIN_W;
@@ -412,6 +443,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const [noteBodyEditingId, setNoteBodyEditingId] = useState<string | null>(null);
   const [noteBodyText, setNoteBodyText] = useState("");
   const [noteBodyEditorStyle, setNoteBodyEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [noteHoverPopup, setNoteHoverPopup] = useState<{ nodeId: string; x: number; y: number } | null>(null);
+  const noteHoverShowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noteHoverHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [areas, setAreas] = useState<CanvasArea[]>(initialAreas ?? []);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
@@ -1487,6 +1521,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   const onBgMouseDown = (e: React.MouseEvent) => {
     setNotePopup(null);
+    setNoteHoverPopup(null);
+    if (noteHoverShowTimer.current) { clearTimeout(noteHoverShowTimer.current); noteHoverShowTimer.current = null; }
+    if (noteHoverHideTimer.current) { clearTimeout(noteHoverHideTimer.current); noteHoverHideTimer.current = null; }
     setNodeCtxMenu(null);
     setStickyCtxMenu(null);
     setAreaCtxMenu(null);
@@ -1527,6 +1564,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    setNoteHoverPopup(null);
+    if (noteHoverShowTimer.current) { clearTimeout(noteHoverShowTimer.current); noteHoverShowTimer.current = null; }
     setZoom(z => Math.min(3, Math.max(0.2, z - e.deltaY * 0.001)));
   };
 
@@ -1683,8 +1722,29 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               <g key={node.id}
                 transform={`translate(${node.x},${node.y})`}
                 onMouseDown={e => onNodeMouseDown(e, node.id)}
-                onMouseEnter={() => { if (!readOnly) setHoveredId(node.id); }}
-                onMouseLeave={() => setHoveredId(null)}
+                onMouseEnter={() => {
+                  if (!readOnly) setHoveredId(node.id);
+                  // 折りたたみ済みノートノードでコンテンツがあればホバーポップアップ予約
+                  if (node.noteContent !== undefined && node.collapsed && node.noteContent) {
+                    if (noteHoverHideTimer.current) { clearTimeout(noteHoverHideTimer.current); noteHoverHideTimer.current = null; }
+                    noteHoverShowTimer.current = setTimeout(() => {
+                      const svg = svgRef.current;
+                      if (!svg) return;
+                      const r = svg.getBoundingClientRect();
+                      setNoteHoverPopup({
+                        nodeId: node.id,
+                        x: r.left + pan.x + (node.x + w / 2) * zoom,
+                        y: r.top + pan.y + (node.y - h / 2) * zoom,
+                      });
+                    }, 350);
+                  }
+                }}
+                onMouseLeave={() => {
+                  setHoveredId(null);
+                  if (noteHoverShowTimer.current) { clearTimeout(noteHoverShowTimer.current); noteHoverShowTimer.current = null; }
+                  // 少し待ってから消す（ポップアップへマウスを移動できるように）
+                  noteHoverHideTimer.current = setTimeout(() => setNoteHoverPopup(null), 180);
+                }}
                 onDoubleClick={e => {
                   if (readOnly || isImageNode) return;
                   e.stopPropagation();
@@ -2456,6 +2516,50 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
           </p>
         </div>
       )}
+
+      {/* ノートホバープレビューポップアップ */}
+      {noteHoverPopup && (() => {
+        const popNode = nodes.find(n => n.id === noteHoverPopup.nodeId);
+        if (!popNode || !popNode.noteContent) return null;
+        const lines = parseMdLines(popNode.noteContent);
+        // 画面右端チェック（はみ出す場合は左に出す）
+        const POPUP_W = 280;
+        const svgW = svgRef.current?.clientWidth ?? 800;
+        const svgLeft = svgRef.current?.getBoundingClientRect().left ?? 0;
+        const rawX = noteHoverPopup.x + 10;
+        const popX = rawX + POPUP_W > svgLeft + svgW ? noteHoverPopup.x - POPUP_W - 10 : rawX;
+        return (
+          <div
+            style={{
+              position: "absolute", zIndex: 60,
+              left: popX, top: noteHoverPopup.y,
+              width: POPUP_W, maxHeight: 360, overflowY: "auto",
+              background: "white", borderRadius: 12,
+              boxShadow: "0 8px 32px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.08)",
+              border: "1px solid #e2e8f0",
+              padding: "12px 14px 14px",
+            }}
+            onMouseEnter={() => {
+              if (noteHoverHideTimer.current) { clearTimeout(noteHoverHideTimer.current); noteHoverHideTimer.current = null; }
+            }}
+            onMouseLeave={() => {
+              noteHoverHideTimer.current = setTimeout(() => setNoteHoverPopup(null), 150);
+            }}
+            onMouseDown={e => e.stopPropagation()}
+          >
+            {/* ヘッダー：ノード名 */}
+            <div style={{ fontSize: 11, fontWeight: 600, color: popNode.color, marginBottom: 8,
+              paddingBottom: 6, borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ background: popNode.color, borderRadius: 3, width: 8, height: 8, display: "inline-block", flexShrink: 0 }} />
+              {popNode.text}
+            </div>
+            {/* Markdown 本文 */}
+            <div style={{ userSelect: "none" }}>
+              {renderMdHTML(lines)}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 付箋インラインエディタ */}
       {!readOnly && editingStickyId && stickyEditorStyle && (
