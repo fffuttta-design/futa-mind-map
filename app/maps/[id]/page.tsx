@@ -12,6 +12,7 @@ import LinePreviewModal from "@/components/LinePreviewModal";
 import SettingsModal from "@/components/SettingsModal";
 import PageSettingsModal from "@/components/PageSettingsModal";
 import TabBar from "@/components/TabBar";
+import TabMapPickerModal from "@/components/TabMapPickerModal";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
 import { openTab, updateTabTitle } from "@/lib/tabs";
 
@@ -49,6 +50,7 @@ export default function MapEditorPage() {
   const [showManualSave, setShowManualSave] = useState(false);
   const [manualSaveName, setManualSaveName] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [showMapPicker, setShowMapPicker] = useState(false);
   const { hasUpdate, latestVersion } = useVersionCheck();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<{ exportSVG: () => void; exportPNG: () => void } | null>(null);
@@ -185,7 +187,7 @@ export default function MapEditorPage() {
 
   return (
     <div className="flex flex-col h-screen">
-      <TabBar currentId={id} />
+      <TabBar currentId={id} onPlusClick={() => setShowMapPicker(true)} />
       <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shrink-0">
         <button onClick={() => router.push("/maps")} className="text-gray-400 hover:text-gray-600 transition-colors text-sm shrink-0">
           ← 一覧
@@ -391,6 +393,14 @@ export default function MapEditorPage() {
           </div>
         )}
       </div>
+
+      {/* タブ マップ選択モーダル */}
+      {showMapPicker && (
+        <TabMapPickerModal
+          currentMapId={id}
+          onClose={() => setShowMapPicker(false)}
+        />
+      )}
 
       {/* LINE プレビューモーダル */}
       {previewMessage && (

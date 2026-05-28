@@ -846,6 +846,38 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     onNodesChangeRef.current(updated);
   }, [pushUndo]);
 
+  /** 選択中のノードを囲むエリアを作成 */
+  const createAreaFromSelection = useCallback(() => {
+    const sel = nodesRef.current.filter(n => selectedIds.has(n.id));
+    if (sel.length === 0) return;
+    pushUndo();
+    localModifiedAt.current = Date.now();
+    const pad = 40;
+    const minX = Math.min(...sel.map(n => n.x - nodeWidth(n) / 2)) - pad;
+    const maxX = Math.max(...sel.map(n => n.x + nodeWidth(n) / 2)) + pad;
+    const minY = Math.min(...sel.map(n => n.y - nodeHeight(n) / 2)) - AREA_HEADER_H - pad;
+    const maxY = Math.max(...sel.map(n => n.y + nodeHeight(n) / 2)) + pad;
+    const color = AREA_COLORS[Math.floor(Math.random() * AREA_COLORS.length)];
+    const newArea: CanvasArea = {
+      id: `area-${Date.now()}`,
+      x: minX,
+      y: minY,
+      width: Math.max(maxX - minX, 120),
+      height: Math.max(maxY - minY, 80),
+      title: "エリア",
+      color,
+    };
+    const updated = [...areasRef.current, newArea];
+    setAreas(updated);
+    onAreasChangeRef.current?.(updated);
+    setSelectedAreaId(newArea.id);
+    setNodeCtxMenu(null);
+    setTimeout(() => {
+      setEditingAreaId(newArea.id);
+      setEditingAreaTitle("エリア");
+    }, 50);
+  }, [selectedIds, pushUndo]);
+
   const convertToList = useCallback((nodeId: string, listType: "checkbox" | "numbered" | "bullet" = "checkbox") => {
     pushUndo();
     localModifiedAt.current = Date.now();
@@ -1989,6 +2021,20 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
             <button onClick={resetToAutoSize} className="w-7 h-7 rounded-lg text-sm text-gray-500 hover:bg-gray-100 flex items-center justify-center transition-colors">⊡</button>
             <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">文字サイズに自動調整</span>
           </div>
+          <div className="w-px h-5 bg-gray-200 mx-0.5" />
+          {/* エリアで囲む */}
+          <div className="relative group">
+            <button
+              onClick={createAreaFromSelection}
+              className="h-7 px-2.5 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-indigo-50 flex items-center gap-1 transition-colors"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="3"/>
+              </svg>
+              エリア化
+            </button>
+            <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 z-50">選択ノードをエリアで囲む</span>
+          </div>
         </div>
       )}
 
@@ -2297,10 +2343,22 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
             <span className="text-xs text-gray-400 pointer-events-none font-medium">ドラッグで移動</span>
           </div>
           <div className="p-3 flex flex-col gap-2.5 overflow-y-auto" style={{ maxHeight: "70vh" }}>
-          {/* 複数選択表示 */}
+          {/* 複数選択表示 + エリア作成 */}
           {isBatch && (
-            <div className="text-xs text-indigo-600 font-semibold bg-indigo-50 rounded-lg px-2 py-1">
-              {selectedIds.size}個のノードに適用
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-indigo-600 font-semibold bg-indigo-50 rounded-lg px-2 py-1 flex-1">
+                {selectedIds.size}個のノードに適用
+              </div>
+              <button
+                onClick={createAreaFromSelection}
+                className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold transition-colors"
+                title="選択ノードをエリアで囲む"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="3"/>
+                </svg>
+                エリア化
+              </button>
             </div>
           )}
 

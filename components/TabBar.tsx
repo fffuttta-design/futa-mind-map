@@ -6,9 +6,10 @@ import { Tab, loadTabs, closeTab } from "@/lib/tabs";
 
 interface Props {
   currentId: string;
+  onPlusClick?: () => void;
 }
 
-export default function TabBar({ currentId }: Props) {
+export default function TabBar({ currentId, onPlusClick }: Props) {
   const router = useRouter();
   const [tabs, setTabs] = useState<Tab[]>([]);
 
@@ -34,7 +35,6 @@ export default function TabBar({ currentId }: Props) {
     setTabs(remaining);
     if (id === currentId) {
       if (remaining.length > 0) {
-        // 閉じたタブの左隣へ（なければ右隣）
         const closedIdx = prevTabs.findIndex(t => t.id === id);
         const nextIdx = Math.max(0, closedIdx - 1);
         const next = remaining[nextIdx] ?? remaining[0];
@@ -61,7 +61,6 @@ export default function TabBar({ currentId }: Props) {
                 : "bg-gray-100 text-gray-500 hover:bg-gray-50 hover:text-gray-700 border-transparent cursor-pointer"
               }`}
           >
-            {/* マップアイコン */}
             <span className="text-[10px] opacity-60 shrink-0">🗺️</span>
             <span className="truncate max-w-[110px]">{tab.title}</span>
             <button
@@ -75,11 +74,11 @@ export default function TabBar({ currentId }: Props) {
         );
       })}
 
-      {/* マップ一覧を開く */}
+      {/* ＋ボタン → モーダルを開く */}
       <button
-        onClick={() => router.push("/maps")}
-        title="マップ一覧を開く"
-        className="ml-1 px-2.5 py-1.5 text-gray-400 hover:text-indigo-500 text-sm leading-none transition-colors shrink-0 rounded-t"
+        onClick={onPlusClick}
+        title="マップを開く・新規作成"
+        className="ml-1 px-2.5 py-1.5 text-gray-400 hover:text-indigo-500 text-sm leading-none transition-colors shrink-0 rounded-t hover:bg-gray-200"
       >
         ＋
       </button>
