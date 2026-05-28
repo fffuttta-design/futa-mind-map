@@ -1592,7 +1592,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                         <rect
                           x={-w / 2 + 1} y={-h / 2 + LIST_HEADER_H}
                           width={w - 2} height={h - LIST_HEADER_H}
-                          fill="transparent"
+                          fill={noteBodyEditingId === node.id ? "rgba(249,250,251,0.97)" : "transparent"}
                           onMouseDown={e => e.stopPropagation()}
                           onDoubleClick={e => {
                             e.stopPropagation();
@@ -1610,7 +1610,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                         >
                           {(() => {
                             const plain = stripHtml(node.noteContent || "");
-                            const preview = plain || "クリックしてノートを編集...";
+                            const preview = plain || "ダブルクリックで編集...";
                             const lines = preview.split("\n").slice(0, 3);
                             return lines.map((line, i) => (
                               <tspan key={i} x={-w / 2 + 10} dy={i === 0 ? 0 : 16}>
@@ -1631,6 +1631,23 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                         </text>
                       </g>
                     )}
+                    {/* リサイズハンドル */}
+                    {isSelected && !readOnly && !editingId && !noteBodyEditingId && (
+                      [["se", w / 2, h / 2], ["sw", -w / 2, h / 2], ["ne", w / 2, -h / 2], ["nw", -w / 2, -h / 2]] as ["se" | "sw" | "ne" | "nw", number, number][]
+                    ).map(([corner, hx, hy]) => (
+                      <rect
+                        key={`resize-${corner}`}
+                        x={hx - 5} y={hy - 5} width={10} height={10}
+                        fill="white" stroke="#6366f1" strokeWidth={1.5} rx={2}
+                        style={{ cursor: (corner === "se" || corner === "nw") ? "nwse-resize" : "nesw-resize", pointerEvents: "all" }}
+                        onMouseDown={e => {
+                          e.stopPropagation();
+                          pushUndo();
+                          const cp = toCanvas(e.clientX, e.clientY);
+                          setResizing({ id: node.id, corner, startCx: cp.x, startCy: cp.y, startW: w, startH: h, startNx: node.x, startNy: node.y, isImage: false });
+                        }}
+                      />
+                    ))}
                   </>
                 ) : node.listItems ? (
                   // ── コンテナ（リスト）ノード ──
@@ -2228,6 +2245,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
             fontFamily: "inherit",
             borderRadius: `0 0 ${8 * zoom}px ${8 * zoom}px`,
             overflowY: "hidden",
+            cursor: "text",
+            zIndex: 10,
           }}
         />
       )}
