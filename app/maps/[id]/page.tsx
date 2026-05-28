@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { doc, onSnapshot, updateDoc, addDoc, collection, query, orderBy, limit } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, addDoc, collection, query, orderBy, limit, waitForPendingWrites } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { MindMap, MindMapNode, StickyNote, CanvasArea, LineMessageData, HistoryEntry } from "@/types";
@@ -118,8 +118,18 @@ export default function MapEditorPage() {
     }
   }, [id]);
 
-  // 常に最新の flushSaves を ref に保持（unmount・beforeunload から stale closure なしで呼べるよう）
-  useEffect(() => { flushSavesRef.current = flushSaves; }, [flushSaves]);
+  /**
+   * flush してサーバー確認まで待つ（ナビゲーション直前専用）
+   * - pendingSave が空でも「直前の updateDoc が in-flight」のケースを waitForPendingWrites でカバー
+   * - これにより、新しいリスナー貼り直し時に必ずサーバー最新データが届く
+   */
+  const flushAndWait = useCallback(async () => {
+    await flushSaves();
+    await waitForPendingWrites(db);
+  }, [flushSaves]);
+
+  // 常に最新の flushAndWait を ref に保持（unmount・beforeunload から stale closure なしで呼べるよう）
+  useEffect(() => { flushSavesRef.current = flushAndWait; }, [flushAndWait]);
 
   // アンマウント時にフラッシュ（タブ切り替え・ナビゲーションによる unmount 対策）
   useEffect(() => {
@@ -242,10 +252,10 @@ export default function MapEditorPage() {
 
   return (
     <div className="flex flex-col h-screen">
-      <TabBar currentId={id} onPlusClick={() => setShowMapPicker(true)} onBeforeNavigate={flushSaves} />
+      <TabBar currentId={id} onPlusClick={() => setShowMapPicker(true)} onBeforeNavigate={flushAndWait} />
       <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shrink-0">
         <button
-          onClick={async () => { await flushSaves(); router.push("/maps"); }}
+          onClick={async () => { await flushAndWait(); router.push("/maps"); }}
           className="text-gray-400 hover:text-gray-600 transition-colors text-sm shrink-0"
         >
           ← 一覧
@@ -489,7 +499,7 @@ export default function MapEditorPage() {
           onClose={() => setShowSettings(false)}
           initialHasUpdate={hasUpdate}
           initialLatestVersion={latestVersion}
-          onBeforeReload={flushSaves}
+          onBeforeReload={flushAndWait}
           onExport={handleExport}
           onImport={handleImport}
         />
