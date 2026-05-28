@@ -47,6 +47,7 @@ export default function MapEditorPage() {
   const [showManualSave, setShowManualSave] = useState(false);
   const [manualSaveName, setManualSaveName] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "pending" | "saving" | "ok" | "error">("idle");
   const { hasUpdate, latestVersion } = useVersionCheck();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<{ exportSVG: () => void; exportPNG: () => void } | null>(null);
@@ -97,16 +98,24 @@ export default function MapEditorPage() {
     pendingSave.current = {};
     const now = Date.now();
     console.log("[fmm:save] writing", { fields: Object.keys(p), nodeCount: p.nodes?.length, id });
+    setSaveStatus("saving");
     try {
       await updateDoc(doc(db, "maps", id), { ...p, updatedAt: now });
       console.log("[fmm:save] ✅ success");
+      setSaveStatus("ok");
+      setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (e) {
       console.error("[fmm:save] ❌ FAILED", e);
       pendingSave.current = p;  // 失敗したら戻す
+      setSaveStatus("error");
     }
     if (p.nodes && now - lastHistorySave.current >= 60 * 1000) {
       lastHistorySave.current = now;
-      await addDoc(collection(db, "maps", id, "history"), { nodes: p.nodes, savedAt: now });
+      try {
+        await addDoc(collection(db, "maps", id, "history"), { nodes: p.nodes, savedAt: now });
+      } catch (e) {
+        console.error("[fmm:history] ❌ FAILED", e);
+      }
     }
   }, [id]);
 
@@ -120,6 +129,7 @@ export default function MapEditorPage() {
 
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    setSaveStatus("pending");
     saveTimer.current = setTimeout(() => flushSaves(), 800);
   }, [flushSaves]);
 
@@ -225,7 +235,11 @@ export default function MapEditorPage() {
             onClick={() => setShowHistory(h => !h)}
             className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${showHistory ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
           >🕐 履歴</button>
-          <span className="text-xs text-gray-400">自動保存</span>
+          {saveStatus === "idle" && <span className="text-xs text-gray-300">自動保存</span>}
+          {saveStatus === "pending" && <span className="text-xs text-yellow-400">● 保存待ち</span>}
+          {saveStatus === "saving" && <span className="text-xs text-blue-400">● 保存中...</span>}
+          {saveStatus === "ok" && <span className="text-xs text-green-500">✓ 保存済み</span>}
+          {saveStatus === "error" && <span className="text-xs text-red-500 font-semibold">✕ 保存失敗!</span>}
         </div>
       </header>
 
