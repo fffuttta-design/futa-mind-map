@@ -1259,6 +1259,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setNodeCtxMenu(null);
     setStickyCtxMenu(null);
     setSelectedStickyId(null);
+    // 別ノードをクリックしたときノート本文編集を確定
+    if (noteBodyEditingId && noteBodyEditingId !== nodeId) commitNoteBodyEdit();
     if (e.shiftKey || e.ctrlKey || e.metaKey) {
       setSelectedIds(prev => {
         const s = new Set(prev);
@@ -1346,6 +1348,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     if (insertMenu) { setInsertMenu(null); setInsertImageMode(false); return; }
     if (editingId) commitEdit();
     if (editingStickyId) commitStickyEdit();
+    if (noteBodyEditingId) commitNoteBodyEdit();
     setSelectedStickyId(null);
 
     // 相談: Shift+ドラッグ → ラバーバンド範囲選択
@@ -1611,10 +1614,10 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                           {(() => {
                             const plain = stripHtml(node.noteContent || "");
                             const preview = plain || "ダブルクリックで編集...";
-                            const lines = preview.split("\n").slice(0, 3);
-                            return lines.map((line, i) => (
-                              <tspan key={i} x={-w / 2 + 10} dy={i === 0 ? 0 : 16}>
-                                {line.length > 28 ? line.slice(0, 28) + "…" : line}
+                            const maxChars = Math.floor((w - 20) / 6.5);
+                            return preview.split("\n").map((line, i) => (
+                              <tspan key={i} x={-w / 2 + 10} dy={i === 0 ? 0 : NOTE_BODY_LINE_H}>
+                                {line.length > maxChars ? line.slice(0, maxChars) + "…" : line}
                               </tspan>
                             ));
                           })()}
