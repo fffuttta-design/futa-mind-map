@@ -1764,7 +1764,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                       <clipPath id={`cnote-${node.id}`}>
                         <rect x={-w / 2} y={-h / 2 + LIST_HEADER_H} width={w} height={h - LIST_HEADER_H} />
                       </clipPath>
-                      <g clipPath={`url(#cnote-${node.id})`}>
+                      <g clipPath={`url(#cnote-${node.id})`} style={{ pointerEvents: "none" }}>
                         {node.noteContent
                           ? renderMdSVG(
                               parseMdLines(node.noteContent),
