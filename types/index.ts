@@ -2,8 +2,6 @@ export interface ListItem {
   id: string;
   text: string;
   checked: boolean;
-  fontBold?: boolean;
-  fontItalic?: boolean;
   children?: ListItem[];
 }
 
@@ -35,7 +33,7 @@ export interface MindMapNode {
   priority?: number;
   listItems?: ListItem[];
   listFontSize?: number;
-  listType?: "checkbox" | "numbered" | "bullet" | "note";
+  listType?: "checkbox" | "numbered" | "bullet";
 }
 
 // ── LINE モード ──────────────────────────────────────

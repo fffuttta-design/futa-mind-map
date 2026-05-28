@@ -837,13 +837,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setTimeout(() => setEditingListItem({ nodeId, itemId: newItem.id, text: "" }), 30);
   }, []);
 
-  const toggleListItemFormat = useCallback((nodeId: string, itemId: string, key: "fontBold" | "fontItalic") => {
-    updateNodes(nodes.map(n => {
-      if (n.id !== nodeId) return n;
-      return { ...n, listItems: updateItemInTree(n.listItems ?? [], itemId, it => ({ ...it, [key]: !it[key] })) };
-    }));
-  }, [nodes, updateNodes]);
-
   const deleteListItem = useCallback((nodeId: string, itemId: string) => {
     pushUndo();
     const updated = nodesRef.current.map(n =>
@@ -856,7 +849,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     onNodesChangeRef.current(updated);
   }, [pushUndo]);
 
-  const convertToList = useCallback((nodeId: string, listType: "checkbox" | "numbered" | "bullet" | "note" = "checkbox") => {
+  const convertToList = useCallback((nodeId: string, listType: "checkbox" | "numbered" | "bullet" = "checkbox") => {
     pushUndo();
     const updated = nodesRef.current.map(n => {
       if (n.id !== nodeId) return n;
@@ -1665,8 +1658,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                                 stroke="#e2e8f0" strokeWidth={1} style={{ pointerEvents: "none" }}
                               />
                             )}
-                            {/* マーカー（チェックボックス / 番号 / 黒丸） note タイプはマーカーなし */}
-                            {lt !== "note" && (isCheckboxMode ? (
+                            {/* マーカー（チェックボックス / 番号 / 黒丸） */}
+                            {isCheckboxMode ? (
                               <g
                                 transform={`translate(${-w / 2 + 18 + indentX}, ${iy})`}
                                 onMouseDown={e => e.stopPropagation()}
@@ -1691,64 +1684,39 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                                 fill={lt === "numbered" ? node.color : (depth === 0 ? "#475569" : "#94a3b8")}
                                 style={{ pointerEvents: "none" }}
                               >{itemLabels[flatIdx]}</text>
-                            ))}
+                            )}
                             {/* テキスト（空の場合も透明rectで広いクリック領域を確保） */}
                             {!isEditingThis && (
                               <>
                                 {/* 広いクリック当たり判定（空アイテムでも編集開始できるよう） */}
                                 <rect
-                                  x={-w / 2 + (lt === "note" ? 12 : 32 + indentX)} y={iy - lih / 2 + 2}
-                                  width={lt === "note" ? w - 84 : w - 80 - indentX} height={lih - 4}
+                                  x={-w / 2 + 32 + indentX} y={iy - lih / 2 + 2}
+                                  width={w - 80 - indentX} height={lih - 4}
                                   fill="transparent"
                                   onMouseDown={e => e.stopPropagation()}
                                   onClick={e => { e.stopPropagation(); startEditListItem(node.id, item.id, item.text); }}
                                   style={{ cursor: "text", pointerEvents: "all" }}
                                 />
                                 <text
-                                  x={-w / 2 + (lt === "note" ? 14 : 34 + indentX)} y={iy}
+                                  x={-w / 2 + 34 + indentX} y={iy}
                                   dominantBaseline="central" fontSize={fs}
-                                  fontWeight={lt === "note" && item.fontBold ? "bold" : "normal"}
                                   fill={item.text
                                     ? (isCheckboxMode && item.checked ? "#94a3b8" : "#334155")
                                     : "#cbd5e1"}
-                                  fontStyle={!item.text ? "italic" : (lt === "note" && item.fontItalic ? "italic" : "normal")}
+                                  fontStyle={item.text ? "normal" : "italic"}
                                   textDecoration={isCheckboxMode && item.checked && item.text ? "line-through" : undefined}
                                   style={{ pointerEvents: "none" }}
                                 >
                                   {(() => {
                                     if (!item.text) return "入力...";
-                                    const areaW = lt === "note" ? w - 84 : w - 80 - indentX;
-                                    const maxChars = Math.floor(areaW / (fs * 0.6));
+                                    const maxChars = Math.floor((w - 80 - indentX) / (fs * 0.6));
                                     return item.text.length > maxChars ? item.text.slice(0, maxChars) + "…" : item.text;
                                   })()}
                                 </text>
                               </>
                             )}
-                            {/* ノートタイプ: B/I 書式ボタン */}
-                            {!readOnly && lt === "note" && (
-                              <>
-                                <g
-                                  transform={`translate(${w / 2 - 52}, ${iy})`}
-                                  onMouseDown={e => e.stopPropagation()}
-                                  onClick={e => { e.stopPropagation(); toggleListItemFormat(node.id, item.id, "fontBold"); }}
-                                  style={{ cursor: "pointer" }}
-                                >
-                                  <circle r={9} fill={item.fontBold ? "#e0e7ff" : "transparent"} />
-                                  <text textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight="bold" fill={item.fontBold ? "#6366f1" : "#cbd5e1"} style={{ pointerEvents: "none" }}>B</text>
-                                </g>
-                                <g
-                                  transform={`translate(${w / 2 - 34}, ${iy})`}
-                                  onMouseDown={e => e.stopPropagation()}
-                                  onClick={e => { e.stopPropagation(); toggleListItemFormat(node.id, item.id, "fontItalic"); }}
-                                  style={{ cursor: "pointer" }}
-                                >
-                                  <circle r={9} fill={item.fontItalic ? "#e0e7ff" : "transparent"} />
-                                  <text textAnchor="middle" dominantBaseline="central" fontSize={11} fontStyle="italic" fill={item.fontItalic ? "#6366f1" : "#cbd5e1"} style={{ pointerEvents: "none" }}>I</text>
-                                </g>
-                              </>
-                            )}
-                            {/* サブ項目追加ボタン（note以外、depth < 2 の時のみ） */}
-                            {!readOnly && lt !== "note" && depth < 2 && (
+                            {/* サブ項目追加ボタン（depth < 2 の時のみ） */}
+                            {!readOnly && depth < 2 && (
                               <g
                                 transform={`translate(${w / 2 - 36}, ${iy})`}
                                 onMouseDown={e => e.stopPropagation()}
@@ -2484,7 +2452,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                   { type: "checkbox" as const, label: "☑", title: "チェック" },
                   { type: "numbered"  as const, label: "1.", title: "番号付き" },
                   { type: "bullet"    as const, label: "●", title: "箇条書き" },
-                  { type: "note"      as const, label: "📝", title: "ノート" },
                 ]).map(opt => (
                   <button
                     key={opt.type}
@@ -2506,7 +2473,6 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                     { type: "checkbox" as const, label: "☑", title: "チェック" },
                     { type: "numbered"  as const, label: "1.", title: "番号" },
                     { type: "bullet"    as const, label: "●", title: "箇条書き" },
-                    { type: "note"      as const, label: "📝", title: "ノート" },
                   ]).map(opt => (
                     <button
                       key={opt.type}
