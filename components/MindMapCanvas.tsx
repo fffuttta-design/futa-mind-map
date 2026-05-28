@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { MindMapNode, StickyNote, CanvasArea, ListItem } from "@/types";
 import NodeToolbar from "./NodeToolbar";
 
@@ -105,10 +105,144 @@ const NOTE_BODY_LINE_H = 18;
 const NOTE_BODY_VPAD = 16;
 const NOTE_BODY_MIN_LINES = 3;
 
+// ── Markdown パーサー & レンダラー（ノート本文用） ──
+
+interface MdRun {
+  text: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+}
+
+interface MdLine {
+  type: "h1" | "h2" | "bullet" | "p" | "empty";
+  runs: MdRun[];
+  prefix: string;
+  indent: number;
+}
+
+/** インライン書式のパース: **bold** *italic* __underline__ */
+function parseMdInline(raw: string): MdRun[] {
+  const runs: MdRun[] = [];
+  let i = 0;
+  let bold = false, italic = false, underline = false;
+  let text = "";
+
+  const flush = () => {
+    if (text) { runs.push({ text, bold, italic, underline }); text = ""; }
+  };
+
+  while (i < raw.length) {
+    if (raw[i] === "*" && raw[i + 1] === "*") {
+      flush(); bold = !bold; i += 2;
+    } else if (raw[i] === "*") {
+      flush(); italic = !italic; i += 1;
+    } else if (raw[i] === "_" && raw[i + 1] === "_") {
+      flush(); underline = !underline; i += 2;
+    } else {
+      text += raw[i]; i++;
+    }
+  }
+  flush();
+  return runs.length ? runs : [{ text: raw, bold: false, italic: false, underline: false }];
+}
+
+/** 行レベルのパース */
+function parseMdLines(content: string): MdLine[] {
+  return content.split("\n").map(line => {
+    if (line.trim() === "") {
+      return { type: "empty", runs: [], prefix: "", indent: 0 };
+    }
+    if (/^# /.test(line)) {
+      return { type: "h1", runs: parseMdInline(line.slice(2)), prefix: "", indent: 0 };
+    }
+    if (/^## /.test(line)) {
+      return { type: "h2", runs: parseMdInline(line.slice(3)), prefix: "", indent: 0 };
+    }
+    const bulletM = line.match(/^(\s*)([-*])\s(.*)/);
+    if (bulletM) {
+      const indent = Math.floor(bulletM[1].length / 2);
+      return { type: "bullet", runs: parseMdInline(bulletM[3]), prefix: "•", indent };
+    }
+    return { type: "p", runs: parseMdInline(line), prefix: "", indent: 0 };
+  });
+}
+
+/** 1行あたりのピクセル高さ */
+function mdLineH(type: MdLine["type"]): number {
+  if (type === "h1") return 24;
+  if (type === "h2") return 21;
+  if (type === "empty") return 10;
+  return NOTE_BODY_LINE_H;
+}
+
 function noteBodyHeight(noteContent: string): number {
-  const plain = stripHtml(noteContent || "");
-  const lines = Math.max(NOTE_BODY_MIN_LINES, plain.split("\n").length);
-  return lines * NOTE_BODY_LINE_H + NOTE_BODY_VPAD;
+  if (!noteContent?.trim()) return NOTE_BODY_MIN_LINES * NOTE_BODY_LINE_H + NOTE_BODY_VPAD;
+  const lines = parseMdLines(noteContent);
+  const totalH = lines.reduce((acc, l) => acc + mdLineH(l.type), 0);
+  const minH = NOTE_BODY_MIN_LINES * NOTE_BODY_LINE_H + NOTE_BODY_VPAD;
+  return Math.max(minH, totalH + NOTE_BODY_VPAD);
+}
+
+/** SVG 上に Markdown プレビューをレンダリング */
+function renderMdSVG(
+  lines: MdLine[],
+  startX: number,
+  startY: number,
+  maxW: number,
+): React.ReactNode[] {
+  const elements: React.ReactNode[] = [];
+  let curY = startY;
+
+  lines.forEach((line, li) => {
+    if (line.type === "empty") { curY += mdLineH("empty"); return; }
+
+    const lh = mdLineH(line.type);
+    const isH1 = line.type === "h1";
+    const isH2 = line.type === "h2";
+    const fontSize = isH1 ? 14 : isH2 ? 12 : 11;
+    const fontWeight = (isH1 || isH2) ? "700" : "400";
+    const fill = isH1 ? "#0f172a" : isH2 ? "#1e293b" : "#475569";
+    const indent = line.indent * 12;
+    const prefixW = line.prefix ? 13 : 0;
+    const textX = startX + indent + prefixW;
+    const maxChars = Math.max(6, Math.floor((maxW - 20 - indent - prefixW) / (fontSize * 0.60)));
+
+    if (line.prefix) {
+      elements.push(
+        <text key={`pre-${li}`} x={startX + indent} y={curY}
+          fontSize={fontSize} fill={fill} dominantBaseline="hanging"
+          style={{ pointerEvents: "none" }}>
+          {line.prefix}
+        </text>
+      );
+    }
+
+    // 全テキストが maxChars に収まる場合は runs をそのまま tspan で出力
+    const fullText = line.runs.map(r => r.text).join("");
+    const displayRuns: MdRun[] = fullText.length > maxChars
+      ? [{ text: fullText.slice(0, maxChars - 1) + "…", bold: false, italic: false, underline: false }]
+      : line.runs;
+
+    elements.push(
+      <text key={`txt-${li}`} x={textX} y={curY}
+        fontSize={fontSize} fontWeight={fontWeight} fill={fill}
+        dominantBaseline="hanging" style={{ pointerEvents: "none" }}>
+        {displayRuns.map((run, ri) => (
+          <tspan key={ri}
+            fontWeight={run.bold ? "700" : fontWeight}
+            fontStyle={run.italic ? "italic" : "normal"}
+            textDecoration={run.underline ? "underline" : "none"}>
+            {run.text}
+          </tspan>
+        ))}
+      </text>
+    );
+
+    curY += lh;
+  });
+
+  return elements;
 }
 
 function nodeWidth(node: MindMapNode): number {
@@ -1605,23 +1739,24 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                           }}
                           style={{ cursor: "text" }}
                         />
-                        <text
-                          x={-w / 2 + 10} y={-h / 2 + LIST_HEADER_H + 14}
-                          fontSize={11} fill={node.noteContent ? "#475569" : "#cbd5e1"}
-                          fontStyle={node.noteContent ? "normal" : "italic"}
-                          style={{ pointerEvents: "none" }}
-                        >
-                          {(() => {
-                            const plain = stripHtml(node.noteContent || "");
-                            const preview = plain || "ダブルクリックで編集...";
-                            const maxChars = Math.floor((w - 20) / 6.5);
-                            return preview.split("\n").map((line, i) => (
-                              <tspan key={i} x={-w / 2 + 10} dy={i === 0 ? 0 : NOTE_BODY_LINE_H}>
-                                {line.length > maxChars ? line.slice(0, maxChars) + "…" : line}
-                              </tspan>
-                            ));
-                          })()}
-                        </text>
+                        {node.noteContent
+                          ? renderMdSVG(
+                              parseMdLines(node.noteContent),
+                              -w / 2 + 10,
+                              -h / 2 + LIST_HEADER_H + 10,
+                              w,
+                            )
+                          : (
+                            <text
+                              x={-w / 2 + 10} y={-h / 2 + LIST_HEADER_H + 14}
+                              fontSize={11} fill="#cbd5e1" fontStyle="italic"
+                              dominantBaseline="hanging"
+                              style={{ pointerEvents: "none" }}
+                            >
+                              ダブルクリックで編集...
+                            </text>
+                          )
+                        }
                       </>
                     )}
                     {/* 優先度バッジ */}
