@@ -68,6 +68,7 @@ export default function MapEditorPage() {
     const unsub = onSnapshot(doc(db, "maps", id), (snap) => {
       if (snap.exists()) {
         const data = { id: snap.id, ...snap.data() } as MindMap;
+        console.log("[fmm:snap] received", { nodeCount: data.nodes?.length, fromCache: snap.metadata.fromCache });
         setMap(data);
         setTitle(data.title);
         setIsPublic(data.isPublic ?? false);
@@ -92,10 +93,17 @@ export default function MapEditorPage() {
   const flushSaves = useCallback(async () => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     const p = pendingSave.current;
-    if (Object.keys(p).length === 0) return;
+    if (Object.keys(p).length === 0) { console.log("[fmm:save] skip (nothing pending)"); return; }
     pendingSave.current = {};
     const now = Date.now();
-    await updateDoc(doc(db, "maps", id), { ...p, updatedAt: now });
+    console.log("[fmm:save] writing", { fields: Object.keys(p), nodeCount: p.nodes?.length, id });
+    try {
+      await updateDoc(doc(db, "maps", id), { ...p, updatedAt: now });
+      console.log("[fmm:save] ✅ success");
+    } catch (e) {
+      console.error("[fmm:save] ❌ FAILED", e);
+      pendingSave.current = p;  // 失敗したら戻す
+    }
     if (p.nodes && now - lastHistorySave.current >= 60 * 1000) {
       lastHistorySave.current = now;
       await addDoc(collection(db, "maps", id, "history"), { nodes: p.nodes, savedAt: now });
