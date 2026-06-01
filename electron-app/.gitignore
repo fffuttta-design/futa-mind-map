@@ -1,4 +1,5 @@
 node_modules/
 dist/
-build/
+build/*
+!build/icon.ico
 build-info.json

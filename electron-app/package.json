@@ -6,8 +6,8 @@
   "scripts": {
     "start": "electron .",
     "icon": "node generate-icon.mjs",
-    "build": "npm run icon && electron-builder --win",
-    "release": "npm run icon && electron-builder --win --publish always"
+    "build": "electron-builder --win",
+    "release": "electron-builder --win --publish always"
   },
   "build": {
     "appId": "com.futamindmap.desktop",
