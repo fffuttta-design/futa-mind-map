@@ -3,3 +3,5 @@ dist/
 build/*
 !build/icon.ico
 build-info.json
+build-test.log
+*.log
