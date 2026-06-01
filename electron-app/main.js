@@ -1,9 +1,21 @@
-const { app, BrowserWindow, shell, Menu } = require("electron");
+const { app, BrowserWindow, shell, Menu, dialog } = require("electron");
 const path = require("path");
-const checkForUpdates = require("./updater");
+const { autoUpdater } = require("electron-updater");
 
 const APP_URL = "https://futa-mind-map.vercel.app";
 
+let mainWin = null;
+
+// ── 認証/自サイトのURL判定 ───────────────────────────────────
+function isInternalUrl(url) {
+  return (
+    url.startsWith(APP_URL) ||
+    url.includes("accounts.google.com") ||
+    url.includes("firebaseapp.com")
+  );
+}
+
+// ── BrowserWindow 作成 ──────────────────────────────────────
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -19,90 +31,84 @@ function createWindow() {
     icon: path.join(__dirname, "build", "icon.ico"),
     autoHideMenuBar: true,
     backgroundColor: "#f9fafb",
-    show: false, // 準備完了まで非表示
+    show: false, // 準備完了まで非表示（白チカ防止）
   });
 
-  // 準備できたら表示（白チカ防止）
-  win.once("ready-to-show", () => {
-    win.show();
-  });
+  win.once("ready-to-show", () => win.show());
 
   win.loadURL(APP_URL);
 
-  // 自動アップデート（起動5秒後にチェック）
-  if (app.isPackaged) setTimeout(() => checkForUpdates(win), 5000);
-
-  // ポップアップ・ナビゲーションのハンドリング
+  // ポップアップ（Firebase / Google OAuth）は Electron 内、外部リンクは既定ブラウザ
   win.webContents.setWindowOpenHandler(({ url }) => {
-    // Firebase / Google OAuth のポップアップは Electron 内で開く（signInWithPopup に必要）
-    if (
-      url.startsWith(APP_URL) ||
-      url.includes("accounts.google.com") ||
-      url.includes("firebaseapp.com/__/auth")
-    ) {
-      return { action: "allow" };
-    }
-    // それ以外の外部リンクはブラウザで開く
+    if (isInternalUrl(url)) return { action: "allow" };
     shell.openExternal(url);
     return { action: "deny" };
   });
 
-  // ページ内ナビゲーション（リダイレクトなど）
-  win.webContents.on("will-navigate", (event, url) => {
-    // Firebase auth ハンドラー・アプリ内遷移は許可
-    if (
-      url.startsWith(APP_URL) ||
-      url.includes("accounts.google.com") ||
-      url.includes("firebaseapp.com/__/auth")
-    ) return;
-    // それ以外はブラウザへ
-    event.preventDefault();
-    shell.openExternal(url);
+  win.webContents.on("will-navigate", (e, url) => {
+    if (!isInternalUrl(url)) {
+      e.preventDefault();
+      shell.openExternal(url);
+    }
   });
 
-  // シンプルなメニュー（macOS 対応も含む）
-  const menu = Menu.buildFromTemplate([
-    {
-      label: "FutaMindMap",
-      submenu: [
-        { label: "再読み込み", accelerator: "CmdOrCtrl+R", click: () => win.reload() },
-        { type: "separator" },
-        { label: "終了", accelerator: "Alt+F4", click: () => app.quit() },
-      ],
-    },
-    {
-      label: "編集",
-      submenu: [
-        { role: "undo", label: "元に戻す" },
-        { role: "redo", label: "やり直し" },
-        { type: "separator" },
-        { role: "cut", label: "切り取り" },
-        { role: "copy", label: "コピー" },
-        { role: "paste", label: "貼り付け" },
-        { role: "selectAll", label: "すべて選択" },
-      ],
-    },
-    {
-      label: "表示",
-      submenu: [
-        { role: "zoomIn",  label: "拡大", accelerator: "CmdOrCtrl+=" },
-        { role: "zoomOut", label: "縮小", accelerator: "CmdOrCtrl+-" },
-        { role: "resetZoom", label: "実際のサイズ", accelerator: "CmdOrCtrl+0" },
-        { type: "separator" },
-        { role: "togglefullscreen", label: "フルスクリーン" },
-      ],
-    },
-  ]);
-  Menu.setApplicationMenu(menu);
+  return win;
 }
 
-app.whenReady().then(() => {
-  createWindow();
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
+// ── 自動更新（electron-updater / GitHub Releases） ───────────
+// アプリ枠（Electronシェル）のみを更新する。中身（Webアプリ）は
+// Vercel が常に最新を配信するため、更新の仕組みは不要。
+function setupAutoUpdater(win) {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
+  autoUpdater.on("update-downloaded", async (info) => {
+    const { response } = await dialog.showMessageBox(win, {
+      type: "info",
+      title: "アップデートがあります",
+      message: `FutaMindMap v${info.version} が利用できます`,
+      detail: "今すぐ再起動して最新版を適用しますか？\n（あとで再起動した時にも自動で適用されます）",
+      buttons: ["今すぐ再起動", "あとで"],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (response === 0) autoUpdater.quitAndInstall();
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("[autoUpdater]", err == null ? "unknown error" : err.message);
+  });
+
+  // 起動直後 + 1時間ごとにチェック
+  autoUpdater.checkForUpdates().catch(() => {});
+  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 60 * 60 * 1000);
+}
+
+// ── シングルインスタンス ────────────────────────────────────
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWin) {
+      if (mainWin.isMinimized()) mainWin.restore();
+      mainWin.show();
+      mainWin.focus();
+    }
+  });
+
+  app.whenReady().then(() => {
+    Menu.setApplicationMenu(null);
+    mainWin = createWindow();
+    if (app.isPackaged) setupAutoUpdater(mainWin);
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) mainWin = createWindow();
+  });
+}

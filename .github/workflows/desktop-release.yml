@@ -1,0 +1,37 @@
+name: Desktop Release
+
+# デスクトップ版(Electron)を GitHub Releases へ自動公開する。
+# 使い方:  electron-app/package.json の version を上げて
+#          `git tag desktop-v1.1.0 && git push origin desktop-v1.1.0`
+# → このワークフローが Windows でビルドし、インストーラと latest.yml を
+#   Release に添付する。各PCのアプリは electron-updater で自動更新される。
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: electron-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build & publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release
