@@ -1774,7 +1774,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
                   <>
                     <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={8}
                       fill="white"
-                      stroke={isSelected ? "#6366f1" : nodeBorderWidth > 0 ? "#000000" : "#e2e8f0"}
+                      stroke={isSelected ? "#6366f1" : "#000000"}
                       strokeWidth={isSelected ? 2 : nodeBorderWidth > 0 ? nodeBorderWidth : 1}
                     />
                     <rect x={-w / 2} y={-h / 2} width={w} height={LIST_HEADER_H} rx={8} fill={node.color} />
@@ -2536,7 +2536,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
               width: POPUP_W, maxHeight: 360, overflowY: "auto",
               background: "white", borderRadius: 12,
               boxShadow: "0 8px 32px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.08)",
-              border: "1px solid #e2e8f0",
+              border: "1.5px solid #000000",
               padding: "12px 14px 14px",
             }}
             onMouseEnter={() => {
