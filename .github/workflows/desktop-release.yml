@@ -1,10 +1,12 @@
 name: Desktop Release
 
-# デスクトップ版(Electron)を GitHub Releases へ自動公開する。
+# デスクトップ版(Electron / ポータブル)を GitHub Releases へ公開する。
 # 使い方:  electron-app/package.json の version を上げて
-#          `git tag desktop-v1.1.0 && git push origin desktop-v1.1.0`
-# → このワークフローが Windows でビルドし、インストーラと latest.yml を
-#   Release に添付する。各PCのアプリは electron-updater で自動更新される。
+#          `git tag desktop-v1.2.0 && git push origin desktop-v1.2.0`
+# → Windows でポータブルEXEをビルドし、Release に添付する。
+#
+# ポータブル版は自動更新を行わない。中身(Webアプリ)は Vercel が常に最新を
+# 配信するため、EXE を置くだけで常に最新の状態で使える。
 
 on:
   push:
@@ -31,7 +33,22 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build & publish to GitHub Releases
+      - name: Build portable EXE
+        run: npm run build
+
+      - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run release
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $exe = (Get-ChildItem dist/*.exe | Select-Object -First 1).FullName
+          $existing = gh release view $tag -R ${{ github.repository }} 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag -R ${{ github.repository }} --clobber "$exe"
+          } else {
+            gh release create $tag -R ${{ github.repository }} `
+              --title "FutaMindMap Desktop (Portable) $tag" `
+              --notes "ポータブル版。EXEをダウンロードして実行するだけ（インストール不要）。中身はVercelで常に最新です。" `
+              "$exe"
+          }
