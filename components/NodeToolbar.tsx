@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { MindMapNode } from "@/types";
+import { uploadImageFile } from "@/lib/uploadImage";
 
 const COLORS = [
   "#6366f1", "#8b5cf6", "#ec4899", "#ef4444",
@@ -24,11 +25,12 @@ interface Props {
   screenX: number;
   screenY: number;
   onUpdate: (node: MindMapNode) => void;
+  mapId?: string;
 }
 
 type Panel = "nodeColor" | "textColor" | "link" | "note" | "media" | null;
 
-export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props) {
+export default function NodeToolbar({ node, screenX, screenY, onUpdate, mapId }: Props) {
   const [panel, setPanel] = useState<Panel>(null);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -195,9 +197,13 @@ export default function NodeToolbar({ node, screenX, screenY, onUpdate }: Props)
               onChange={e => {
                 const file = e.target.files?.[0];
                 if (!file) return;
+                // まず data URL で即プレビュー → 裏で Storage にアップロードして URL 差し替え
                 const reader = new FileReader();
                 reader.onload = ev => { onUpdate({ ...node, imageUrl: ev.target?.result as string }); };
                 reader.readAsDataURL(file);
+                uploadImageFile(file, mapId ?? "")
+                  .then(url => onUpdate({ ...node, imageUrl: url }))
+                  .catch(() => console.error("[NodeToolbar] 画像のアップロードに失敗しました"));
               }}
             />
           </label>

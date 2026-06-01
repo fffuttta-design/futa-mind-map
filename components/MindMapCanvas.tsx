@@ -3,8 +3,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { MindMapNode, StickyNote, CanvasArea, ListItem } from "@/types";
 import NodeToolbar from "./NodeToolbar";
+import { uploadImageSrc, uploadImageFile } from "@/lib/uploadImage";
 
 interface Props {
+  mapId?: string;
   initialNodes: MindMapNode[];
   onNodesChange: (nodes: MindMapNode[]) => void;
   initialStickyNotes?: StickyNote[];
@@ -396,7 +398,7 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${nodeEls}\n</svg>`;
 }
 
-export default function MindMapCanvas({ initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, initialAreas, onAreasChange, onNoteOpen }: Props) {
+export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, initialAreas, onAreasChange, onNoteOpen }: Props) {
   const [nodes, setNodes] = useState<MindMapNode[]>(initialNodes);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -500,6 +502,8 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
   const stickyNotesRef = useRef(stickyNotes);
   const draggingStickyRef = useRef(draggingSticky);
   const onStickyNotesChangeRef = useRef(onStickyNotesChange);
+  const mapIdRef = useRef(mapId);
+  mapIdRef.current = mapId;
   nodesRef.current = nodes;
   draggingRef.current = dragging;
   resizingRef.current = resizing;
@@ -702,6 +706,26 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     onNodesChange(updated);
   }, [onNodesChange, pushUndo]);
 
+  /**
+   * 指定ノードの画像(data URL)を Firebase Storage にアップロードし、
+   * 完了後に imageUrl をダウンロード URL へ差し替えて保存する。
+   * 画像本体を Firestore に保存しないことで 1MiB 上限超過を防ぐ。
+   * アップロード中は data URL のまま表示され、UX を損なわない。
+   */
+  const persistNodeImage = useCallback(async (nodeId: string, src: string) => {
+    try {
+      const url = await uploadImageSrc(src, mapIdRef.current ?? "");
+      if (url === src) return; // 変化なし（既に URL 等）→ 何もしない
+      localModifiedAt.current = Date.now();
+      const upd = nodesRef.current.map(n => n.id === nodeId ? { ...n, imageUrl: url } : n);
+      setNodes(upd);
+      onNodesChangeRef.current(upd);
+    } catch {
+      // アップロード失敗時は data URL のまま（保存は失敗しうるが画像は表示される）
+      console.error("[persistNodeImage] 画像のアップロードに失敗しました");
+    }
+  }, []);
+
   const undo = useCallback(() => {
     if (undoStack.current.length === 0) return;
     const prev = undoStack.current.pop()!;
@@ -897,8 +921,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
 
   const addFloatingImageNode = useCallback((cx: number, cy: number, dataUrl: string) => {
     if (!dataUrl.trim()) return;
+    const newId = `node-${Date.now()}`;
     const newNode: MindMapNode = {
-      id: `node-${Date.now()}`, text: "",
+      id: newId, text: "",
       x: cx, y: cy, parentId: null, color: "#64748b",
       imageUrl: dataUrl.trim(), imageWidth: 200, imageHeight: 150,
     };
@@ -907,7 +932,9 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
     setInsertMenu(null);
     setInsertImageMode(false);
     setInsertImageUrl("");
-  }, [nodes, updateNodes]);
+    // data URL の場合は Storage にアップロードして URL に差し替え
+    void persistNodeImage(newId, dataUrl.trim());
+  }, [nodes, updateNodes, persistNodeImage]);
 
   // 2ノード選択時に位置を入れ替える
   const swapNodePositions = useCallback(() => {
@@ -1237,13 +1264,23 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
         const p = panRef.current, z = zoomRef.current;
         const cx = -p.x / z + (Math.random() - 0.5) * 80;
         const cy = -p.y / z + (Math.random() - 0.5) * 80;
+        const newId = `node-${Date.now()}`;
         const newNode: MindMapNode = {
-          id: `node-${Date.now()}`, text: "",
+          id: newId, text: "",
           x: cx, y: cy, parentId: null, color: "#64748b",
           imageUrl: dataUrl, imageWidth: 200, imageHeight: 150,
         };
         setNodes(prev => { const updated = [...prev, newNode]; onNodesChangeRef.current(updated); return updated; });
         setSelectedIds(new Set([newNode.id]));
+        // File をバイナリのまま Storage にアップロードして URL に差し替え
+        uploadImageFile(file, mapIdRef.current ?? "")
+          .then(url => {
+            localModifiedAt.current = Date.now();
+            const upd = nodesRef.current.map(n => n.id === newId ? { ...n, imageUrl: url } : n);
+            setNodes(upd);
+            onNodesChangeRef.current(upd);
+          })
+          .catch(() => console.error("[paste] 画像のアップロードに失敗しました"));
       };
       reader.readAsDataURL(file);
     };
@@ -2497,6 +2534,7 @@ export default function MindMapCanvas({ initialNodes, onNodesChange, initialStic
           node={nodes.find(n => n.id === selectedId)!}
           screenX={toolbarPos.x}
           screenY={toolbarPos.y}
+          mapId={mapId}
           onUpdate={updated => updateNodes(nodes.map(n => n.id === selectedId ? updated : n))}
         />
       )}

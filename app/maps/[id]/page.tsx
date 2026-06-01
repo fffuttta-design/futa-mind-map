@@ -283,6 +283,7 @@ export default function MapEditorPage() {
           {historyPreview
             ? <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly edgeStyle={edgeStyle} />
             : <MindMapCanvas
+                mapId={id}
                 initialNodes={map.nodes}
                 onNodesChange={saveNodes}
                 initialStickyNotes={map.stickyNotes}
