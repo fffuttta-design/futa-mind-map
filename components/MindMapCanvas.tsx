@@ -664,6 +664,12 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     }
   }, [noteBodyEditingId]);
 
+  // ホバーポップアップが閉じたら、編集フラグも必ずリセット
+  // （これが残ると以後ホバーしてもポップアップが出なくなる）
+  useEffect(() => {
+    if (!noteHoverPopup && popupEditing) setPopupEditing(false);
+  }, [noteHoverPopup, popupEditing]);
+
   useEffect(() => {
     const svg = svgRef.current;
     const note = editingStickyId ? stickyNotes.find(n => n.id === editingStickyId) : undefined;
