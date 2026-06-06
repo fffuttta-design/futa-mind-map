@@ -1768,11 +1768,11 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                       const svg = svgRef.current;
                       if (!svg) return;
                       const r = svg.getBoundingClientRect();
-                      // ノードの右隣に固定表示（右端 + 余白12px、上端そろえ）
+                      // ノードの右隣（すぐ真隣）に固定表示。座標系は他と同じく画面中央=キャンバス原点。
                       setNoteHoverPopup({
                         nodeId: node.id,
-                        x: r.left + pan.x + (node.x + w / 2) * zoom + 12,
-                        y: r.top + pan.y + (node.y - h / 2) * zoom,
+                        x: r.width / 2 + pan.x + (node.x + w / 2) * zoom + 4,
+                        y: r.height / 2 + pan.y + (node.y - h / 2) * zoom,
                       });
                     }, 200);
                   }
@@ -2544,15 +2544,14 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
         const popNode = nodes.find(n => n.id === noteHoverPopup.nodeId);
         if (!popNode || !popNode.noteContent) return null;
         const lines = parseMdLines(popNode.noteContent);
-        // ノードの右隣に表示（noteHoverPopup.x は既にノード右端＋余白）。
-        // 画面右端で完全にはみ出す場合のみ、ノードの左側へ回り込ませる保険。
+        // ノードの右隣に表示（noteHoverPopup.x は SVGコンテナ内座標でノード右端＋余白）。
+        // コンテナ右端で完全にはみ出す場合のみ、ノードの左側へ回り込ませる保険。
         const POPUP_W = 280;
         const nodeW = nodeWidth(popNode) * zoom;
         const svgW = svgRef.current?.clientWidth ?? 800;
-        const svgLeft = svgRef.current?.getBoundingClientRect().left ?? 0;
         const rawX = noteHoverPopup.x;
-        const popX = rawX + POPUP_W > svgLeft + svgW
-          ? noteHoverPopup.x - nodeW - POPUP_W - 24  // ノード左側へ
+        const popX = rawX + POPUP_W > svgW
+          ? noteHoverPopup.x - nodeW - POPUP_W - 8  // ノード左側へ
           : rawX;
         return (
           <div
