@@ -11,6 +11,7 @@ import LineMessagePanel from "@/components/LineMessagePanel";
 import LinePreviewModal from "@/components/LinePreviewModal";
 import SettingsModal from "@/components/SettingsModal";
 import PageSettingsModal from "@/components/PageSettingsModal";
+import AiGenerateModal from "@/components/AiGenerateModal";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
 
 function groupByDate(entries: HistoryEntry[]) {
@@ -37,6 +38,7 @@ export default function MapEditorPage() {
   const [defaultShape, setDefaultShape] = useState<"pill" | "rect" | "circle" | "diamond" | "text">("pill");
   const [nodeBorderWidth, setNodeBorderWidth] = useState<number>(0);
   const [showPageSettings, setShowPageSettings] = useState(false);
+  const [showAiGenerate, setShowAiGenerate] = useState(false);
   const [showShareUrl, setShowShareUrl] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -156,6 +158,20 @@ export default function MapEditorPage() {
     await updateDoc(doc(db, "maps", id), { title: newTitle, updatedAt: Date.now() });
   };
 
+  // AI生成: 受け取ったノードを既存マップに追加して保存
+  const handleAiGenerated = useCallback((newNodes: MindMapNode[], aiTitle: string) => {
+    if (!map) return;
+    const merged = [...map.nodes, ...newNodes];
+    setMap({ ...map, nodes: merged });
+    saveNodes(merged);
+    // マップが空でタイトル未設定なら、AIのタイトルを採用
+    if (map.nodes.length === 0 && aiTitle && (!title || title === "無題のマップ")) {
+      setTitle(aiTitle);
+      saveTitle(aiTitle);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, title, saveNodes]);
+
   const togglePublic = async () => {
     const next = !isPublic;
     setIsPublic(next);
@@ -227,6 +243,10 @@ export default function MapEditorPage() {
             onClick={() => exportRef.current?.exportPNG()}
             className="px-3 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
           >PNG</button>
+          <button
+            onClick={() => setShowAiGenerate(true)}
+            className="px-3 py-1.5 text-xs rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors font-semibold"
+          >✨ AIで生成</button>
           <button
             onClick={() => setShowPageSettings(true)}
             className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
@@ -462,6 +482,13 @@ export default function MapEditorPage() {
           onClose={() => setShowPageSettings(false)}
         />
       )}
+
+      <AiGenerateModal
+        open={showAiGenerate}
+        onClose={() => setShowAiGenerate(false)}
+        onGenerated={handleAiGenerated}
+        origin={{ x: 0, y: 0 }}
+      />
     </div>
   );
 }
