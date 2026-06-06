@@ -295,8 +295,8 @@ function nodeWidth(node: MindMapNode): number {
 
 function nodeHeight(node: MindMapNode): number {
   if (node.noteContent !== undefined) {
-    if (node.collapsed) return LIST_HEADER_H + NOTE_PREVIEW_H;
-    return node.customHeight ?? (LIST_HEADER_H + noteBodyHeight(node.noteContent));
+    // ノートノードは常にプレビュー高さ固定（全文はホバーポップアップで表示）
+    return LIST_HEADER_H + NOTE_PREVIEW_H;
   }
   if (node.listItems) {
     if (node.collapsed) return LIST_HEADER_H;
@@ -1761,19 +1761,20 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                 onMouseDown={e => onNodeMouseDown(e, node.id)}
                 onMouseEnter={() => {
                   if (!readOnly) setHoveredId(node.id);
-                  // 折りたたみ済みノートノードでコンテンツがあればホバーポップアップ予約
-                  if (node.noteContent !== undefined && node.collapsed && node.noteContent) {
+                  // ノートノードに本文があればホバーで右隣に全文ポップアップ（編集中は出さない）
+                  if (node.noteContent !== undefined && node.noteContent && noteBodyEditingId !== node.id) {
                     if (noteHoverHideTimer.current) { clearTimeout(noteHoverHideTimer.current); noteHoverHideTimer.current = null; }
                     noteHoverShowTimer.current = setTimeout(() => {
                       const svg = svgRef.current;
                       if (!svg) return;
                       const r = svg.getBoundingClientRect();
+                      // ノードの右隣に固定表示（右端 + 余白12px、上端そろえ）
                       setNoteHoverPopup({
                         nodeId: node.id,
-                        x: r.left + pan.x + (node.x + w / 2) * zoom,
+                        x: r.left + pan.x + (node.x + w / 2) * zoom + 12,
                         y: r.top + pan.y + (node.y - h / 2) * zoom,
                       });
-                    }, 350);
+                    }, 200);
                   }
                 }}
                 onMouseLeave={() => {
@@ -1824,24 +1825,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                         {node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text}
                       </text>
                     )}
-                    {/* 折りたたみトグル */}
-                    <g
-                      transform={`translate(${w / 2 - 16}, ${-h / 2 + LIST_HEADER_H / 2})`}
-                      onMouseDown={e => e.stopPropagation()}
-                      onClick={e => {
-                        e.stopPropagation();
-                        localModifiedAt.current = Date.now();
-                        const upd = nodesRef.current.map(n => n.id === node.id ? { ...n, collapsed: !n.collapsed } : n);
-                        setNodes(upd); onNodesChangeRef.current(upd);
-                      }}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <circle r={10} fill="rgba(255,255,255,0.2)" />
-                      <text textAnchor="middle" dominantBaseline="central" fontSize={9} fill="white" style={{ pointerEvents: "none" }}>
-                        {node.collapsed ? "▶" : "▼"}
-                      </text>
-                    </g>
-                    {/* ノート本文（collapsed=プレビュー / 展開=全文） */}
+                    {/* ノート本文（常にプレビュー数行。全文はホバーで右隣ポップアップ） */}
                     <>
                       {/* クリック/ダブルクリック受付 rect */}
                       <rect
@@ -1881,8 +1865,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                           )
                         }
                       </g>
-                      {/* 折りたたみ時：下部フェードアウト */}
-                      {node.collapsed && node.noteContent && (
+                      {/* プレビュー下部のフェードアウト（続きがあることを示す） */}
+                      {node.noteContent && (
                         <>
                           <defs>
                             <linearGradient id={`nfade-${node.id}`} x1="0" y1="0" x2="0" y2="1">
@@ -1909,15 +1893,15 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                         </text>
                       </g>
                     )}
-                    {/* リサイズハンドル */}
+                    {/* 横幅リサイズハンドル（高さはプレビュー固定。左右で幅のみ調整） */}
                     {isSelected && !readOnly && !editingId && !noteBodyEditingId && (
-                      [["se", w / 2, h / 2], ["sw", -w / 2, h / 2], ["ne", w / 2, -h / 2], ["nw", -w / 2, -h / 2]] as ["se" | "sw" | "ne" | "nw", number, number][]
+                      [["se", w / 2, h / 2], ["ne", w / 2, -h / 2]] as ["se" | "ne", number, number][]
                     ).map(([corner, hx, hy]) => (
                       <rect
                         key={`resize-${corner}`}
                         x={hx - 5} y={hy - 5} width={10} height={10}
                         fill="white" stroke="#6366f1" strokeWidth={1.5} rx={2}
-                        style={{ cursor: (corner === "se" || corner === "nw") ? "nwse-resize" : "nesw-resize", pointerEvents: "all" }}
+                        style={{ cursor: "ew-resize", pointerEvents: "all" }}
                         onMouseDown={e => {
                           e.stopPropagation();
                           pushUndo();
@@ -2560,12 +2544,16 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
         const popNode = nodes.find(n => n.id === noteHoverPopup.nodeId);
         if (!popNode || !popNode.noteContent) return null;
         const lines = parseMdLines(popNode.noteContent);
-        // 画面右端チェック（はみ出す場合は左に出す）
+        // ノードの右隣に表示（noteHoverPopup.x は既にノード右端＋余白）。
+        // 画面右端で完全にはみ出す場合のみ、ノードの左側へ回り込ませる保険。
         const POPUP_W = 280;
+        const nodeW = nodeWidth(popNode) * zoom;
         const svgW = svgRef.current?.clientWidth ?? 800;
         const svgLeft = svgRef.current?.getBoundingClientRect().left ?? 0;
-        const rawX = noteHoverPopup.x + 10;
-        const popX = rawX + POPUP_W > svgLeft + svgW ? noteHoverPopup.x - POPUP_W - 10 : rawX;
+        const rawX = noteHoverPopup.x;
+        const popX = rawX + POPUP_W > svgLeft + svgW
+          ? noteHoverPopup.x - nodeW - POPUP_W - 24  // ノード左側へ
+          : rawX;
         return (
           <div
             style={{
