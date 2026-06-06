@@ -1,6 +1,6 @@
 {
   "name": "futa-mind-map-desktop",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "FutaMindMap Windows Desktop App (Portable)",
   "main": "main.js",
   "scripts": {
@@ -32,7 +32,7 @@
       "icon": "build/icon.ico"
     },
     "portable": {
-      "artifactName": "FutaMindMap-Portable-${version}.exe"
+      "artifactName": "FutaMindMap.exe"
     }
   },
   "devDependencies": {

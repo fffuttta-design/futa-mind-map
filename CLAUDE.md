@@ -28,28 +28,28 @@ export const APP_VERSION = "1.0.xx";
 | プラットフォーム | 手順 |
 |---|---|
 | **Web** | `git push origin main` → Vercel が自動デプロイ |
-| **デスクトップ** | 下記「デスクトップ版の配布」参照（electron-updater + GitHub Releases） |
+| **デスクトップ** | 下記「デスクトップ版の配布」参照（ポータブルEXE + GitHub Releases） |
 | **Android** | APK / Play Store ビルド & 配布（手順は別途） |
 
-### デスクトップ版の配布（自動更新の仕組み）
+### デスクトップ版の配布（ポータブルEXE）
 
 デスクトップ版（`electron-app/`）は **Vercel の本番URLを読み込む薄いシェル**。
 中身（機能改修）は Web と同じく `git push` で自動反映されるため、**シェル自体を直した時だけ**再配布すればよい。
 
-更新方式は **electron-updater + GitHub Releases**：
+配布方式は **ポータブル単体EXE + GitHub Releases**（自動更新なし。中身はVercelで常に最新）：
 
 1. `electron-app/package.json` の `version` を上げる（fix=PATCH / feat=MINOR）
 2. タグを切って push：
    ```
-   git tag desktop-v1.1.0 && git push origin desktop-v1.1.0
+   git tag desktop-v1.2.x && git push origin desktop-v1.2.x
    ```
 3. GitHub Actions（`.github/workflows/desktop-release.yml`）が Windows でビルドし、
-   インストーラ + `latest.yml` を Release に自動添付する
-4. 各PCのアプリは起動時／1時間ごとに更新を検知 → ダウンロード後にダイアログ → 再起動で適用
+   ポータブルEXEを Release に自動添付する
+4. 各PCは Release ページから EXE を落として置き換えるだけ（インストール不要）
 
-- 初回のみ Release ページからインストーラを落として手動インストール（以後は全自動）。
-- ローカルでビルドだけ確認: `cd electron-app && npm run build`（`dist/` に生成）。
-- ローカルから手動公開: `cd electron-app && set GH_TOKEN=... && npm run release`。
+- 成果物のファイル名は **常に `FutaMindMap.exe`**（`portable.artifactName` を固定名にしてあるため、
+  バージョンを上げてもファイル名は変わらない＝ショートカットが切れない）。
+- ローカルでビルドだけ確認: `cd electron-app && npm run build`（`dist/FutaMindMap.exe` に生成）。
 - ⚠️ Web版（Vercel）には一切影響しない。`electron-app/` のみの変更。
 
 ---
