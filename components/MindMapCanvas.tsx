@@ -446,6 +446,10 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   const [noteBodyText, setNoteBodyText] = useState("");
   const [noteBodyEditorStyle, setNoteBodyEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [noteHoverPopup, setNoteHoverPopup] = useState<{ nodeId: string; x: number; y: number } | null>(null);
+  // ホバーポップアップ上でのその場編集（A方式）
+  const [popupEditing, setPopupEditing] = useState(false);
+  const [popupEditText, setPopupEditText] = useState("");
+  const popupEditRef = useRef<HTMLTextAreaElement>(null);
   const noteHoverShowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteHoverHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1058,6 +1062,25 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     onNodesChangeRef.current(upd);
     setNoteBodyEditingId(null);
   }, [noteBodyEditingId, noteBodyText]);
+
+  // ホバーポップアップ上での編集を確定（A方式）
+  const commitPopupEdit = useCallback(() => {
+    setPopupEditing(prev => {
+      if (!prev) return false;
+      const targetId = noteHoverPopup?.nodeId;
+      if (targetId) {
+        localModifiedAt.current = Date.now();
+        const upd = nodesRef.current.map(n =>
+          n.id === targetId ? { ...n, noteContent: popupEditText } : n
+        );
+        setNodes(upd);
+        onNodesChangeRef.current(upd);
+      }
+      return false;
+    });
+    // 確定後はポップアップを閉じる
+    setNoteHoverPopup(null);
+  }, [noteHoverPopup, popupEditText]);
 
   const commitListItemEdit = useCallback(() => {
     if (!editingListItem) return;
@@ -1762,7 +1785,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                 onMouseEnter={() => {
                   if (!readOnly) setHoveredId(node.id);
                   // ノートノードに本文があればホバーで右隣に全文ポップアップ（編集中は出さない）
-                  if (node.noteContent !== undefined && node.noteContent && noteBodyEditingId !== node.id) {
+                  if (node.noteContent !== undefined && node.noteContent && noteBodyEditingId !== node.id && !popupEditing) {
                     if (noteHoverHideTimer.current) { clearTimeout(noteHoverHideTimer.current); noteHoverHideTimer.current = null; }
                     noteHoverShowTimer.current = setTimeout(() => {
                       const svg = svgRef.current;
@@ -1780,6 +1803,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                 onMouseLeave={() => {
                   setHoveredId(null);
                   if (noteHoverShowTimer.current) { clearTimeout(noteHoverShowTimer.current); noteHoverShowTimer.current = null; }
+                  if (popupEditing) return; // 編集中はポップアップを消さない
                   // 少し待ってから消す（ポップアップへマウスを移動できるように）
                   noteHoverHideTimer.current = setTimeout(() => setNoteHoverPopup(null), 180);
                 }}
@@ -2568,6 +2592,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
               if (noteHoverHideTimer.current) { clearTimeout(noteHoverHideTimer.current); noteHoverHideTimer.current = null; }
             }}
             onMouseLeave={() => {
+              if (popupEditing) return; // 編集中は消さない
               noteHoverHideTimer.current = setTimeout(() => setNoteHoverPopup(null), 150);
             }}
             onMouseDown={e => e.stopPropagation()}
@@ -2577,11 +2602,42 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
               paddingBottom: 6, borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 5 }}>
               <span style={{ background: popNode.color, borderRadius: 3, width: 8, height: 8, display: "inline-block", flexShrink: 0 }} />
               {popNode.text}
+              {!readOnly && !popupEditing && (
+                <span style={{ marginLeft: "auto", fontSize: 10, color: "#94a3b8" }}>クリックで編集</span>
+              )}
             </div>
-            {/* Markdown 本文 */}
-            <div style={{ userSelect: "none" }}>
-              {renderMdHTML(lines)}
-            </div>
+            {/* 本文：通常はMarkdown表示。クリックでその場編集（A方式） */}
+            {popupEditing ? (
+              <textarea
+                ref={popupEditRef}
+                value={popupEditText}
+                onChange={e => setPopupEditText(e.target.value)}
+                onBlur={commitPopupEdit}
+                onKeyDown={e => {
+                  e.stopPropagation();
+                  if (e.key === "Escape") { e.preventDefault(); commitPopupEdit(); }
+                }}
+                style={{
+                  width: "100%", minHeight: 160, maxHeight: 320,
+                  fontSize: 12, lineHeight: "1.6", color: "#334155",
+                  border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px",
+                  outline: "none", resize: "vertical", fontFamily: "inherit",
+                  boxSizing: "border-box",
+                }}
+              />
+            ) : (
+              <div
+                style={{ userSelect: "none", cursor: readOnly ? "default" : "text" }}
+                onClick={() => {
+                  if (readOnly) return;
+                  setPopupEditText(stripHtml(popNode.noteContent || ""));
+                  setPopupEditing(true);
+                  setTimeout(() => popupEditRef.current?.focus(), 0);
+                }}
+              >
+                {renderMdHTML(lines)}
+              </div>
+            )}
           </div>
         );
       })()}
