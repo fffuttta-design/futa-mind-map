@@ -34,6 +34,25 @@ export interface MindMapNode {
   listItems?: ListItem[];
   listFontSize?: number;
   listType?: "checkbox" | "numbered" | "bullet";
+  // タグ・友だち情報（Lステップ風）: マスタの id を参照
+  tagIds?: string[];
+  friendFieldIds?: string[];
+}
+
+// ── タグ・友だち情報マスタ（マップ単位で共通） ──────────────
+export interface TagGroup {
+  id: string;
+  name: string;
+}
+export interface TagDef {
+  id: string;
+  name: string;
+  color: string;
+  groupId: string | null;
+}
+export interface FriendFieldDef {
+  id: string;
+  name: string;
 }
 
 // ── LINE モード ──────────────────────────────────────
@@ -106,4 +125,8 @@ export interface MindMap {
   stickyNotes?: StickyNote[];
   areas?: CanvasArea[];
   mode?: "mindmap" | "line";
+  // タグ・友だち情報マスタ（Lステップ風）。既存の tags?: string[] とは別物。
+  tagGroups?: TagGroup[];
+  tagDefs?: TagDef[];
+  friendFields?: FriendFieldDef[];
 }

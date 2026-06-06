@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { MindMapNode, StickyNote, CanvasArea, ListItem } from "@/types";
+import { MindMapNode, StickyNote, CanvasArea, ListItem, TagGroup, TagDef, FriendFieldDef } from "@/types";
 import NodeToolbar from "./NodeToolbar";
+import NodeTagFieldPopup from "./NodeTagFieldPopup";
 import { uploadImageSrc, uploadImageFile } from "@/lib/uploadImage";
 
 interface Props {
@@ -21,6 +22,12 @@ interface Props {
   initialAreas?: CanvasArea[];
   onAreasChange?: (areas: CanvasArea[]) => void;
   onNoteOpen?: (nodeId: string) => void;
+  // タグ・友だち情報マスタ（Lステップ風）
+  tagGroups?: TagGroup[];
+  tagDefs?: TagDef[];
+  friendFields?: FriendFieldDef[];
+  onAddTagDef?: (name: string, color: string, groupId: string | null) => string; // 返り値=新tagId
+  onAddFriendField?: (name: string) => string;                                    // 返り値=新fieldId
 }
 
 const NODE_H = 34;
@@ -398,7 +405,7 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${nodeEls}\n</svg>`;
 }
 
-export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, initialAreas, onAreasChange, onNoteOpen }: Props) {
+export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, initialAreas, onAreasChange, onNoteOpen, tagGroups = [], tagDefs = [], friendFields = [], onAddTagDef, onAddFriendField }: Props) {
   const [nodes, setNodes] = useState<MindMapNode[]>(initialNodes);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -450,6 +457,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   const [popupEditing, setPopupEditing] = useState(false);
   const [popupEditText, setPopupEditText] = useState("");
   const popupEditRef = useRef<HTMLTextAreaElement>(null);
+  // タグ・友だち情報ポップアップ（開いているノードID）
+  const [tagFieldPopupId, setTagFieldPopupId] = useState<string | null>(null);
   const noteHoverShowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteHoverHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -2313,6 +2322,33 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                     ))}
                   </>
                 )}
+                {/* タグ・友だち情報バッジ（全ノード共通・下端に表示。クリックでポップアップ） */}
+                {(() => {
+                  const tagCount = node.tagIds?.filter(id => tagDefs.some(t => t.id === id)).length ?? 0;
+                  const fieldCount = node.friendFieldIds?.filter(id => friendFields.some(f => f.id === id)).length ?? 0;
+                  if (tagCount === 0 && fieldCount === 0) return null;
+                  const badges: { label: string; bg: string }[] = [];
+                  if (tagCount > 0) badges.push({ label: `🏷️${tagCount}`, bg: "#6366f1" });
+                  if (fieldCount > 0) badges.push({ label: `📝${fieldCount}`, bg: "#0ea5e9" });
+                  return (
+                    <g
+                      transform={`translate(${-w / 2 + 4}, ${h / 2 + 4})`}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); if (!readOnly) setTagFieldPopupId(node.id); }}
+                      style={{ cursor: readOnly ? "default" : "pointer" }}
+                    >
+                      {badges.map((b, i) => (
+                        <g key={b.label} transform={`translate(${i * 40}, 0)`}>
+                          <rect x={0} y={0} width={36} height={18} rx={9} fill={b.bg} opacity={0.92} />
+                          <text x={18} y={9} textAnchor="middle" dominantBaseline="central"
+                            fontSize={10} fill="white" fontWeight="bold" style={{ pointerEvents: "none" }}>
+                            {b.label}
+                          </text>
+                        </g>
+                      ))}
+                    </g>
+                  );
+                })()}
               </g>
             );
           })}
@@ -2550,8 +2586,36 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
           screenY={toolbarPos.y}
           mapId={mapId}
           onUpdate={updated => updateNodes(nodes.map(n => n.id === selectedId ? updated : n))}
+          onOpenTagField={() => setTagFieldPopupId(selectedId)}
         />
       )}
+
+      {/* タグ・友だち情報ポップアップ */}
+      {!readOnly && tagFieldPopupId && (() => {
+        const tnode = nodes.find(n => n.id === tagFieldPopupId);
+        if (!tnode) return null;
+        const svg = svgRef.current;
+        const r = svg?.getBoundingClientRect();
+        const tw = nodeWidth(tnode), th = nodeHeight(tnode);
+        const cw = r?.width ?? 800;
+        const baseX = cw / 2 + pan.x + (tnode.x + tw / 2) * zoom + 8;
+        const px = baseX + 280 > cw ? cw / 2 + pan.x + (tnode.x - tw / 2) * zoom - 280 - 8 : baseX;
+        const py = (r?.height ?? 600) / 2 + pan.y + (tnode.y - th / 2) * zoom;
+        return (
+          <NodeTagFieldPopup
+            node={tnode}
+            screenX={px}
+            screenY={py}
+            tagGroups={tagGroups}
+            tagDefs={tagDefs}
+            friendFields={friendFields}
+            onClose={() => setTagFieldPopupId(null)}
+            onUpdateNode={patch => updateNodes(nodesRef.current.map(n => n.id === tagFieldPopupId ? { ...n, ...patch } : n))}
+            onAddTag={(name, color, groupId) => onAddTagDef ? onAddTagDef(name, color, groupId) : ""}
+            onAddField={(name) => onAddFriendField ? onAddFriendField(name) : ""}
+          />
+        );
+      })()}
 
       {notePopup && (
         <div

@@ -12,6 +12,7 @@ import LinePreviewModal from "@/components/LinePreviewModal";
 import SettingsModal from "@/components/SettingsModal";
 import PageSettingsModal from "@/components/PageSettingsModal";
 import AiGenerateModal from "@/components/AiGenerateModal";
+import TagFieldMasterModal from "@/components/TagFieldMasterModal";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
 
 function groupByDate(entries: HistoryEntry[]) {
@@ -39,6 +40,7 @@ export default function MapEditorPage() {
   const [nodeBorderWidth, setNodeBorderWidth] = useState<number>(0);
   const [showPageSettings, setShowPageSettings] = useState(false);
   const [showAiGenerate, setShowAiGenerate] = useState(false);
+  const [showTagMaster, setShowTagMaster] = useState(false);
   const [showShareUrl, setShowShareUrl] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -158,6 +160,49 @@ export default function MapEditorPage() {
     await updateDoc(doc(db, "maps", id), { title: newTitle, updatedAt: Date.now() });
   };
 
+  // タグ・友だち情報マスタの更新（マップドキュメントに直接保存）
+  const saveMasters = useCallback(async (partial: Partial<Pick<MindMap, "tagGroups" | "tagDefs" | "friendFields">>) => {
+    setMap(prev => prev ? { ...prev, ...partial } : prev);
+    const clean = JSON.parse(JSON.stringify({ ...partial, updatedAt: Date.now() }));
+    await updateDoc(doc(db, "maps", id), clean);
+  }, [id]);
+
+  // タグをその場でマスタ追加（返り値=新ID）
+  const addTagDef = useCallback((name: string, color: string, groupId: string | null) => {
+    const newId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+    setMap(prev => {
+      if (!prev) return prev;
+      const tagDefs = [...(prev.tagDefs ?? []), { id: newId, name, color, groupId }];
+      updateDoc(doc(db, "maps", id), { tagDefs: JSON.parse(JSON.stringify(tagDefs)), updatedAt: Date.now() });
+      return { ...prev, tagDefs };
+    });
+    return newId;
+  }, [id]);
+
+  // 友だち情報項目をその場でマスタ追加（返り値=新ID）
+  const addFriendField = useCallback((name: string) => {
+    const newId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+    setMap(prev => {
+      if (!prev) return prev;
+      const friendFields = [...(prev.friendFields ?? []), { id: newId, name }];
+      updateDoc(doc(db, "maps", id), { friendFields: JSON.parse(JSON.stringify(friendFields)), updatedAt: Date.now() });
+      return { ...prev, friendFields };
+    });
+    return newId;
+  }, [id]);
+
+  // マスタ削除時に各ノードの参照を掃除
+  const cleanupNodeRefs = useCallback((removedTagIds: string[], removedFieldIds: string[]) => {
+    if (!map) return;
+    const upd = map.nodes.map(n => ({
+      ...n,
+      tagIds: n.tagIds?.filter(t => !removedTagIds.includes(t)),
+      friendFieldIds: n.friendFieldIds?.filter(f => !removedFieldIds.includes(f)),
+    }));
+    setMap({ ...map, nodes: upd });
+    saveNodes(upd);
+  }, [map, saveNodes]);
+
   // AI生成: 受け取ったノードを既存マップに追加して保存
   const handleAiGenerated = useCallback((newNodes: MindMapNode[], aiTitle: string) => {
     if (!map) return;
@@ -248,6 +293,10 @@ export default function MapEditorPage() {
             className="px-3 py-1.5 text-xs rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors font-semibold"
           >✨ AIで生成</button>
           <button
+            onClick={() => setShowTagMaster(true)}
+            className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+          >🏷️ マスタ管理</button>
+          <button
             onClick={() => setShowPageSettings(true)}
             className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
           >🗺️ ページ設定</button>
@@ -304,6 +353,11 @@ export default function MapEditorPage() {
             ? <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly edgeStyle={edgeStyle} />
             : <MindMapCanvas
                 mapId={id}
+                tagGroups={map.tagGroups}
+                tagDefs={map.tagDefs}
+                friendFields={map.friendFields}
+                onAddTagDef={addTagDef}
+                onAddFriendField={addFriendField}
                 initialNodes={map.nodes}
                 onNodesChange={saveNodes}
                 initialStickyNotes={map.stickyNotes}
@@ -488,6 +542,17 @@ export default function MapEditorPage() {
         onClose={() => setShowAiGenerate(false)}
         onGenerated={handleAiGenerated}
         origin={{ x: 0, y: 0 }}
+      />
+
+      <TagFieldMasterModal
+        open={showTagMaster}
+        onClose={() => setShowTagMaster(false)}
+        tagGroups={map.tagGroups ?? []}
+        tagDefs={map.tagDefs ?? []}
+        friendFields={map.friendFields ?? []}
+        nodes={map.nodes}
+        onSaveMasters={saveMasters}
+        onCleanupNodeRefs={cleanupNodeRefs}
       />
     </div>
   );

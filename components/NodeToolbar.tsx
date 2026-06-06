@@ -26,11 +26,12 @@ interface Props {
   screenY: number;
   onUpdate: (node: MindMapNode) => void;
   mapId?: string;
+  onOpenTagField?: () => void;
 }
 
 type Panel = "nodeColor" | "textColor" | "link" | "note" | "media" | null;
 
-export default function NodeToolbar({ node, screenX, screenY, onUpdate, mapId }: Props) {
+export default function NodeToolbar({ node, screenX, screenY, onUpdate, mapId, onOpenTagField }: Props) {
   const [panel, setPanel] = useState<Panel>(null);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -139,6 +140,16 @@ export default function NodeToolbar({ node, screenX, screenY, onUpdate, mapId }:
           className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center hover:bg-gray-100 transition-colors
             ${panel === "note" ? "bg-indigo-100 text-indigo-600" : "text-gray-500"} ${node.note ? "text-indigo-500" : ""}`}
         >💬</button>
+
+        {/* タグ・友だち情報 */}
+        {onOpenTagField && (
+          <button
+            title="タグ・友だち情報"
+            onClick={onOpenTagField}
+            className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center hover:bg-gray-100 transition-colors
+              ${(node.tagIds?.length || node.friendFieldIds?.length) ? "text-indigo-500" : "text-gray-500"}`}
+          >🏷️</button>
+        )}
 
         {/* チェックボックスノード切り替え */}
         <button
