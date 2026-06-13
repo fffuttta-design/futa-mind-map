@@ -24,6 +24,7 @@ export default function MapsPage() {
   const [newFolder, setNewFolder] = useState("");
   const [newTag, setNewTag] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const { hasUpdate, latestVersion } = useVersionCheck();
 
   useEffect(() => {
@@ -33,11 +34,20 @@ export default function MapsPage() {
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, "maps"), where("ownerId", "==", user.uid));
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MindMap));
-      data.sort((a, b) => b.updatedAt - a.updatedAt);
-      setMaps(data);
-    });
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setLoadError(null);
+        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MindMap));
+        data.sort((a, b) => b.updatedAt - a.updatedAt);
+        setMaps(data);
+      },
+      (err) => {
+        // 取得失敗（権限拒否など）を画面に出して原因を見えるようにする
+        console.error("[fmm:maps] 取得失敗", err);
+        setLoadError(`${err.code ?? "error"}: ${err.message}`);
+      }
+    );
     return unsub;
   }, [user]);
 
@@ -137,10 +147,19 @@ export default function MapsPage() {
           />
         </div>
         <div className="flex items-center gap-4 ml-auto">
-          <span className="text-sm text-gray-500">{user?.displayName}</span>
+          <span className="text-sm text-gray-500" title={user?.email ?? ""}>
+            {user?.displayName}
+            {user?.email && <span className="text-gray-400 ml-1">({user.email})</span>}
+          </span>
           <button onClick={signOut} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">ログアウト</button>
         </div>
       </header>
+
+      {loadError && (
+        <div className="bg-red-50 border-b border-red-200 px-6 py-2 text-sm text-red-700">
+          ⚠️ マップの取得に失敗しました: <code className="text-xs">{loadError}</code>
+        </div>
+      )}
 
       <div className="flex flex-1">
         <aside className="w-52 bg-white border-r border-gray-100 p-4 shrink-0">
