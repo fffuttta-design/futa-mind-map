@@ -21,3 +21,5 @@ export const storage = getStorage(app);
 // Functions は generateMindMap のリージョン(asia-northeast1)に合わせる
 export const functions = getFunctions(app, "asia-northeast1");
 export const googleProvider = new GoogleAuthProvider();
+// ログインのたびに必ずアカウント選択画面を出す（自動ログインで別アカに固定されるのを防ぐ）
+googleProvider.setCustomParameters({ prompt: "select_account" });
