@@ -36,8 +36,7 @@
     "publish": {
       "provider": "github",
       "owner": "fffuttta-design",
-      "repo": "futa-mind-map",
-      "releaseType": "release"
+      "repo": "futa-mind-map"
     }
   },
   "dependencies": {
