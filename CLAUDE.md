@@ -4,6 +4,17 @@
 
 ---
 
+## 0. 仕様書（FutaMindMap仕様書.md）— 起動時に必ず読む
+
+- **このプロジェクトで作業を始めるときは、必ず `FutaMindMap仕様書.md` を最初に読み込むこと。**
+  アプリの全機能・データ構造・保存フロー・配信手順が網羅されている。実装の前提として常に参照する。
+- **機能を変更・追加・削除したら、`FutaMindMap仕様書.md` も併せて更新すること。**
+  仕様（画面・ノード機能・LINE/タグ機能・データモデル・保存方式・配信手順など）に変化が出た改修では、
+  コードと同じコミットで仕様書を最新化する。仕様書が実態とずれた状態で放置しない。
+- 更新時は本文先頭の「最終更新基準（バージョン）」も合わせて直す。
+
+---
+
 ## 1. バージョン管理ルール
 
 改修・機能追加・バグ修正を行ったら、**必ずバージョンを上げてからコミットすること。**
@@ -28,29 +39,43 @@ export const APP_VERSION = "1.0.xx";
 | プラットフォーム | 手順 |
 |---|---|
 | **Web** | `git push origin main` → Vercel が自動デプロイ |
-| **デスクトップ** | 下記「デスクトップ版の配布」参照（ポータブルEXE + GitHub Releases） |
+| **デスクトップ** | 下記「デスクトップ版の配布」参照（NSIS + electron-updater / GitHub Release） |
 | **Android** | APK / Play Store ビルド & 配布（手順は別途） |
 
-### デスクトップ版の配布（ポータブルEXE）
+### デスクトップ版の配布（NSIS + electron-updater）
 
 デスクトップ版（`electron-app/`）は **Vercel の本番URLを読み込む薄いシェル**。
 中身（機能改修）は Web と同じく `git push` で自動反映されるため、**シェル自体を直した時だけ**再配布すればよい。
 
-配布方式は **ポータブル単体EXE + GitHub Releases**（自動更新なし。中身はVercelで常に最新）：
+配布方式は統括ルールの標準＝ **NSIS インストーラ + electron-updater + GitHub Release**：
+
+- `futa-mind-map` は **public リポ**なので、Release は**同一リポ**へ出す（配信専用リポは不要。
+  トークン同梱問題も起きない）。`publish.repo = futa-mind-map`。
+- インストーラがアプリを Windows に登録するため、**白アイコン問題は原理的に発生しない**
+  （旧ポータブル＋Drive方式の自己修復ハックは不要）。
+
+配信手順:
 
 1. `electron-app/package.json` の `version` を上げる（fix=PATCH / feat=MINOR）
 2. タグを切って push：
    ```
-   git tag desktop-v1.2.x && git push origin desktop-v1.2.x
+   git tag desktop-v1.3.x && git push origin desktop-v1.3.x
    ```
-3. GitHub Actions（`.github/workflows/desktop-release.yml`）が Windows でビルドし、
-   ポータブルEXEを Release に自動添付する
-4. 各PCは Release ページから EXE を落として置き換えるだけ（インストール不要）
+3. GitHub Actions（`.github/workflows/desktop-release.yml`）が Windows で NSIS をビルドし、
+   `FutaMindMap-setup.exe` と **`latest.yml`** をリリース `v{version}` へ公開する
+   （`--publish always`。安全弁で exe/blockmap/latest.yml を `--clobber` 再アップロード＋draft解除）
+4. 各PCのアプリは **electron-updater が起動時/3分ごとに `latest.yml` を読み、自動DL→
+   「今すぐ再起動」で自動インストール**する（ユーザーの手動置き換えは不要）
 
-- 成果物のファイル名は **常に `FutaMindMap.exe`**（`portable.artifactName` を固定名にしてあるため、
-  バージョンを上げてもファイル名は変わらない＝ショートカットが切れない）。
-- ローカルでビルドだけ確認: `cd electron-app && npm run build`（`dist/FutaMindMap.exe` に生成）。
+- 成果物名は固定 `FutaMindMap-setup.exe`（`win.artifactName`）。
+- ローカルでビルド確認だけ: `cd electron-app && npm run build`（`--publish never`）。
+  実際に公開する場合は `npm run release`（`--publish always`、要 `GH_TOKEN`=contents:write）。
+- ⚠️ `latest.yml` が無いと自動更新は一切効かない（安全弁で必ず再アップロードすること）。
+- ⚠️ `nsis.installDir` は electron-builder@26 で存在せずビルドが落ちるので書かない。
 - ⚠️ Web版（Vercel）には一切影響しない。`electron-app/` のみの変更。
+- 📌 **旧ポータブル版（〜desktop-v1.2.1）のユーザーは、初回だけ手動で
+  `FutaMindMap-setup.exe` をインストール**する必要がある（旧EXEには更新機能が無いため）。
+  以降は自動更新に乗る。
 
 ---
 

@@ -1,12 +1,14 @@
 name: Desktop Release
 
-# デスクトップ版(Electron / ポータブル)を GitHub Releases へ公開する。
+# デスクトップ版(Electron / NSIS + electron-updater)を GitHub Release へ公開する。
 # 使い方:  electron-app/package.json の version を上げて
-#          `git tag desktop-v1.2.0 && git push origin desktop-v1.2.0`
-# → Windows でポータブルEXEをビルドし、Release に添付する。
+#          `git tag desktop-v1.3.0 && git push origin desktop-v1.3.0`
+# → Windows で NSIS インストーラ(FutaMindMap-setup.exe)と latest.yml をビルドし、
+#    リリース v{version} へ公開する。各PCのアプリは electron-updater が latest.yml を
+#    読んで自動で更新する。中身(機能)は Vercel が常に最新を配信。
 #
-# ポータブル版は自動更新を行わない。中身(Webアプリ)は Vercel が常に最新を
-# 配信するため、EXE を置くだけで常に最新の状態で使える。
+# ⚠ futa-mind-map は public リポなので Release は同一リポへ出す(配信専用リポ不要)。
+# ⚠ latest.yml が無いと自動更新が一切効かないため、安全弁で再アップロードする。
 
 on:
   push:
@@ -33,22 +35,22 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build portable EXE
-        run: npm run build
+      - name: Build NSIS & publish to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always
 
-      - name: Publish GitHub Release
+      - name: Re-upload assets & mark latest (safety valve)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          $exe = (Get-ChildItem dist/*.exe | Select-Object -First 1).FullName
-          $existing = gh release view $tag -R ${{ github.repository }} 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag -R ${{ github.repository }} --clobber "$exe"
-          } else {
-            gh release create $tag -R ${{ github.repository }} `
-              --title "FutaMindMap Desktop (Portable) $tag" `
-              --notes "ポータブル版。EXEをダウンロードして実行するだけ（インストール不要）。中身はVercelで常に最新です。" `
-              "$exe"
-          }
+          $ver = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$ver"
+          # exe / blockmap / latest.yml を必ず再アップロード(取りこぼし対策)
+          $assets = Get-ChildItem dist |
+            Where-Object { $_.Name -match '\.(exe|blockmap)$' -or $_.Name -eq 'latest.yml' } |
+            ForEach-Object { $_.FullName }
+          gh release upload $tag $assets --clobber -R ${{ github.repository }}
+          # draft を外して最新リリースに(electron-updater は draft を無視するため必須)
+          gh release edit $tag --draft=false --latest -R ${{ github.repository }}

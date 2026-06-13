@@ -1,12 +1,13 @@
 {
   "name": "futa-mind-map-desktop",
-  "version": "1.2.1",
-  "description": "FutaMindMap Windows Desktop App (Portable)",
+  "version": "1.3.0",
+  "description": "FutaMindMap Windows Desktop App (NSIS + auto-update)",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "icon": "node generate-icon.mjs",
-    "build": "electron-builder --win --publish never"
+    "build": "electron-builder --win --publish never",
+    "release": "electron-builder --win --publish always"
   },
   "build": {
     "appId": "com.futamindmap.desktop",
@@ -21,23 +22,30 @@
       "build/**"
     ],
     "win": {
-      "target": [
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "build/icon.ico"
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "artifactName": "FutaMindMap-setup.exe"
     },
-    "portable": {
-      "artifactName": "FutaMindMap.exe"
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "fffuttta-design",
+      "repo": "futa-mind-map",
+      "releaseType": "release"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.0.0",
+    "electron-builder": "^26.8.1",
     "png-to-ico": "^2.1.8"
   }
 }
