@@ -385,13 +385,12 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
     return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>`;
   }).join("\n");
 
-  // 関連線（破線＋矢印）
-  const connDefs = `<defs><marker id="ex-conn-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker></defs>`;
+  // 関連線（通常のエッジと同じ：実線・つなぎ元ノードの色・薄め）
   const connEls = connections.map(c => {
     const a = nodes.find(n => n.id === c.from), b = nodes.find(n => n.id === c.to);
     if (!a || !b || !vids.has(a.id) || !vids.has(b.id)) return "";
     const { x1, y1, x2, y2, v } = calcEdgePoints(a, b);
-    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${c.color ?? "#64748b"}" stroke-width="2" stroke-dasharray="6 5" stroke-opacity="0.8" marker-end="url(#ex-conn-arrow)"/>`;
+    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${c.color ?? a.color}" stroke-width="2" stroke-opacity="0.45"/>`;
   }).join("\n");
 
   const nodeEls = nodes.map(node => {
@@ -415,7 +414,7 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
     return `${shapeEl}\n${iconEl}\n<text text-anchor="middle" fill="${tc}" font-size="${fs}" font-weight="${fw}" font-family="sans-serif">${tspans}</text>`;
   }).join("\n");
 
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n${connDefs}\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${connEls}\n${nodeEls}\n</svg>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${connEls}\n${nodeEls}\n</svg>`;
 }
 
 export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, initialAreas, onAreasChange, initialConnections, onConnectionsChange, onNoteOpen, tagGroups = [], tagDefs = [], friendFields = [], onAddTagDef, onAddFriendField }: Props) {
@@ -447,7 +446,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   const [editorStyle, setEditorStyle] = useState<{ left: number; top: number; width: number; height: number; fontSize: number } | null>(null);
   const [nodeCtxMenu, setNodeCtxMenu] = useState<{ nodeId: string; sx: number; sy: number } | null>(null);
   // ノード右クリックメニューのサブメニュー（null=トップ階層 / 各カテゴリの詳細設定）
-  const [ctxSubmenu, setCtxSubmenu] = useState<null | "appearance" | "priority" | "list" | "more">(null);
+  // ノード右クリックメニュー：ホバーしたカテゴリの詳細を右へフライアウト表示（cat と縦位置）
+  const [ctxFlyout, setCtxFlyout] = useState<null | { cat: "appearance" | "priority" | "list" | "more"; top: number }>(null);
   // 相談: ラバーバンド（範囲選択）
   const [rubberBand, setRubberBand] = useState<{ sx: number; sy: number; ex: number; ey: number } | null>(null);
 
@@ -1955,15 +1955,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
               </g>
             );
           })}
-          {/* 関連線（ノード同士を自由につなぐ線。親子ツリーとは別） */}
-          <defs>
-            <marker id="conn-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
-            </marker>
-            <marker id="conn-arrow-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#6366f1" />
-            </marker>
-          </defs>
+          {/* 関連線（ノード同士を自由につなぐ線。親子ツリーとは別。見た目は通常のエッジと同じ） */}
           {connections.map(c => {
             const a = nodes.find(n => n.id === c.from);
             const b = nodes.find(n => n.id === c.to);
@@ -1981,11 +1973,10 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                     onMouseDown={e => { e.stopPropagation(); setSelectedConnectionId(c.id); setSelectedIds(new Set()); setSelectedAreaId(null); }}
                   />
                 )}
-                {/* 見える線（破線＋矢印） */}
+                {/* 見える線（通常のエッジと同じ：実線・つなぎ元ノードの色・薄め） */}
                 <path d={d} fill="none"
-                  stroke={sel ? "#6366f1" : (c.color ?? "#64748b")}
-                  strokeWidth={sel ? 2.5 : 2} strokeDasharray="6 5" strokeOpacity={sel ? 1 : 0.8}
-                  markerEnd={`url(#${sel ? "conn-arrow-sel" : "conn-arrow"})`}
+                  stroke={sel ? "#6366f1" : (c.color ?? a.color)}
+                  strokeWidth={sel ? 2.5 : 2} strokeOpacity={sel ? 1 : 0.45}
                   style={{ pointerEvents: "none" }}
                 />
                 {/* 選択時：中点に削除ボタン */}
@@ -1999,12 +1990,12 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
               </g>
             );
           })}
-          {/* つなぎ中の仮の線 */}
+          {/* つなぎ中の仮の線（つなぎ元ノードの色） */}
           {connecting && (() => {
             const a = nodes.find(n => n.id === connecting.from);
             if (!a) return null;
             return <path d={`M ${a.x},${a.y} L ${connecting.x},${connecting.y}`}
-              fill="none" stroke="#6366f1" strokeWidth={2} strokeDasharray="6 5" style={{ pointerEvents: "none" }} />;
+              fill="none" stroke={a.color} strokeWidth={2} strokeOpacity={0.6} strokeDasharray="6 5" style={{ pointerEvents: "none" }} />;
           })()}
 
           {visible.filter(n => n.parentId && visibleIds.has(n.parentId)).map(n => {
@@ -2081,7 +2072,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                   const rawSy = e.clientY - r.top;
                   const clampedSx = Math.min(Math.max(8, rawSx), (svgRef.current?.clientWidth ?? 800) - MENU_W - 8);
                   const clampedSy = Math.min(Math.max(8, rawSy), (svgRef.current?.clientHeight ?? 600) - MENU_H - 8);
-                  setCtxSubmenu(null);
+                  setCtxFlyout(null);
                   setNodeCtxMenu({ nodeId: node.id, sx: clampedSx, sy: clampedSy });
                 }}
                 style={{ cursor: readOnly ? "default" : "pointer" }}
@@ -3232,277 +3223,246 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
             </div>
           )}
 
-          {ctxSubmenu === null ? (
-          /* ══ トップ階層（コンパクトな1列。詳細は各サブメニューへ） ══ */
-          <>
-            {/* 名前を変更（単一のみ） */}
-            {!isBatch && (
-              <button onClick={() => { if (ctxNode) { setEditingId(ctxNode.id); setEditText(ctxNode.text); } setNodeCtxMenu(null); }}
-                className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-              ><span>✏️</span><span>名前を変更</span></button>
-            )}
+          {/* ── トップ階層（常に1列表示。カテゴリはホバーで右へ展開） ── */}
+          {/* 名前を変更（単一のみ） */}
+          {!isBatch && (
+            <button onMouseEnter={() => setCtxFlyout(null)}
+              onClick={() => { if (ctxNode) { setEditingId(ctxNode.id); setEditText(ctxNode.text); } setNodeCtxMenu(null); }}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+            ><span>✏️</span><span>名前を変更</span></button>
+          )}
 
-            {/* ノート */}
-            {ctxNode.noteContent === undefined ? (
-              <button
-                onClick={() => {
-                  applyFormat({ noteContent: "" });
-                  setNodeCtxMenu(null);
-                  // ノード更新の反映後にモーダル編集を開く
-                  setTimeout(() => openNoteModal(ctxNode.id), 60);
-                }}
-                className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-              ><span>📝</span><span>ノートを追加</span></button>
-            ) : (
-              <>
-                <button
-                  onClick={() => {
-                    setNodeCtxMenu(null);
-                    openNoteModal(ctxNode.id);
-                  }}
-                  className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                ><span>📝</span><span>ノートを編集</span></button>
-                <button
-                  onClick={() => { applyFormat({ noteContent: undefined }); setNodeCtxMenu(null); }}
-                  className="w-full text-left px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 flex items-center gap-2"
-                ><span>🗑</span><span>ノートを削除</span></button>
-              </>
-            )}
-
-            <div className="border-t border-gray-100 my-0.5" />
-
-            {/* 詳細設定カテゴリ（サブメニューを開く） */}
-            <button onClick={() => setCtxSubmenu("appearance")}
-              className="w-full px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
-            >
-              <span className="flex items-center gap-2"><span>🎨</span><span>見た目（形・色・文字）</span></span>
-              <span className="text-gray-300 text-base leading-none">›</span>
-            </button>
-            {!isBatch && (
-              <button onClick={() => setCtxSubmenu("priority")}
-                className="w-full px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
-              >
-                <span className="flex items-center gap-2"><span>🚩</span><span>優先度{ctxNode.priority ? `（${ctxNode.priority}）` : ""}</span></span>
-                <span className="text-gray-300 text-base leading-none">›</span>
-              </button>
-            )}
-            <button onClick={() => setCtxSubmenu("list")}
-              className="w-full px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
-            >
-              <span className="flex items-center gap-2"><span>☰</span><span>リスト{ctxNode.listItems ? "（変換済み）" : ""}</span></span>
-              <span className="text-gray-300 text-base leading-none">›</span>
-            </button>
-            <button onClick={() => setCtxSubmenu("more")}
-              className="w-full px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
-            >
-              <span className="flex items-center gap-2"><span>⚙️</span><span>その他（整列・チェック）</span></span>
-              <span className="text-gray-300 text-base leading-none">›</span>
-            </button>
-
-            {/* 2ノード選択時：位置の入れ替え */}
-            {isBatch && selectedIds.size === 2 && (
-              <>
-                <div className="border-t border-gray-100 my-0.5" />
-                <button onClick={swapNodePositions}
-                  className="w-full text-left px-3 py-2 rounded-lg text-sm text-indigo-600 hover:bg-indigo-50 font-medium flex items-center gap-2"
-                ><span>🔄</span><span>位置を入れ替え</span></button>
-              </>
-            )}
-
-            <div className="border-t border-gray-100 my-0.5" />
-            <button onClick={() => { deleteNodes(isBatch ? selectedIds : new Set([nodeCtxMenu.nodeId])); setNodeCtxMenu(null); }}
-              className="w-full text-left px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 flex items-center gap-2"
-            ><span>🗑️</span><span>{isBatch ? `${selectedIds.size}個を削除` : "削除"}</span></button>
-          </>
+          {/* ノート */}
+          {ctxNode.noteContent === undefined ? (
+            <button onMouseEnter={() => setCtxFlyout(null)}
+              onClick={() => {
+                applyFormat({ noteContent: "" });
+                setNodeCtxMenu(null);
+                setTimeout(() => openNoteModal(ctxNode.id), 60);
+              }}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+            ><span>📝</span><span>ノートを追加</span></button>
           ) : (
-          /* ══ サブメニュー（詳細設定。← 戻るでトップへ） ══ */
-          <>
-            <button onClick={() => setCtxSubmenu(null)}
-              className="w-full text-left px-2 py-1.5 rounded-lg text-sm text-gray-500 hover:bg-gray-50 font-medium flex items-center gap-1"
-            ><span className="text-base leading-none">‹</span><span>戻る</span></button>
-            <div className="border-t border-gray-100 my-0.5" />
+            <>
+              <button onMouseEnter={() => setCtxFlyout(null)}
+                onClick={() => { setNodeCtxMenu(null); openNoteModal(ctxNode.id); }}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+              ><span>📝</span><span>ノートを編集</span></button>
+              <button onMouseEnter={() => setCtxFlyout(null)}
+                onClick={() => { applyFormat({ noteContent: undefined }); setNodeCtxMenu(null); }}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 flex items-center gap-2"
+              ><span>🗑</span><span>ノートを削除</span></button>
+            </>
+          )}
 
-            {ctxSubmenu === "appearance" && (
-              <>
-                {/* 形 */}
-                <div>
-                  <p className="text-xs text-gray-400 mb-1">形</p>
-                  <div className="flex gap-1">
-                    {CTX_SHAPES.map(s => (
-                      <button key={s.id} onClick={() => applyFormat({ shape: s.id })}
-                        className={`flex-1 h-7 rounded border text-sm transition-colors ${(ctxNode.shape ?? "pill") === s.id ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}
-                      >{s.l}</button>
-                    ))}
-                  </div>
-                </div>
+          <div className="border-t border-gray-100 my-0.5" />
 
-                {/* ノード色 */}
-                <div>
-                  <p className="text-xs text-gray-400 mb-1">ノード色</p>
-                  <div className="grid grid-cols-6 gap-1">
-                    {CTX_COLORS.map(c => (
-                      <button key={c} onClick={() => applyFormat({ color: c })}
-                        className="w-6 h-6 rounded-full border border-gray-200 hover:scale-110 transition-transform"
-                        style={{ backgroundColor: c, outline: ctxNode.color === c ? "2px solid #6366f1" : "none", outlineOffset: 1 }}
-                      />
-                    ))}
-                  </div>
-                </div>
+          {/* カテゴリ（ホバーで右にフライアウト表示） */}
+          <button onMouseEnter={e => setCtxFlyout({ cat: "appearance", top: e.currentTarget.offsetTop })}
+            className={`w-full px-3 py-2 rounded-lg text-sm flex items-center justify-between ${ctxFlyout?.cat === "appearance" ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"}`}
+          >
+            <span className="flex items-center gap-2"><span>🎨</span><span>見た目（形・色・文字）</span></span>
+            <span className="text-gray-300 text-base leading-none">›</span>
+          </button>
+          {!isBatch && (
+            <button onMouseEnter={e => setCtxFlyout({ cat: "priority", top: e.currentTarget.offsetTop })}
+              className={`w-full px-3 py-2 rounded-lg text-sm flex items-center justify-between ${ctxFlyout?.cat === "priority" ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"}`}
+            >
+              <span className="flex items-center gap-2"><span>🚩</span><span>優先度{ctxNode.priority ? `（${ctxNode.priority}）` : ""}</span></span>
+              <span className="text-gray-300 text-base leading-none">›</span>
+            </button>
+          )}
+          <button onMouseEnter={e => setCtxFlyout({ cat: "list", top: e.currentTarget.offsetTop })}
+            className={`w-full px-3 py-2 rounded-lg text-sm flex items-center justify-between ${ctxFlyout?.cat === "list" ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"}`}
+          >
+            <span className="flex items-center gap-2"><span>☰</span><span>リスト{ctxNode.listItems ? "（変換済み）" : ""}</span></span>
+            <span className="text-gray-300 text-base leading-none">›</span>
+          </button>
+          <button onMouseEnter={e => setCtxFlyout({ cat: "more", top: e.currentTarget.offsetTop })}
+            className={`w-full px-3 py-2 rounded-lg text-sm flex items-center justify-between ${ctxFlyout?.cat === "more" ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"}`}
+          >
+            <span className="flex items-center gap-2"><span>⚙️</span><span>その他（整列・チェック）</span></span>
+            <span className="text-gray-300 text-base leading-none">›</span>
+          </button>
 
-                {/* テキスト書式 */}
-                <div>
-                  <p className="text-xs text-gray-400 mb-1">テキスト</p>
-                  <div className="flex gap-1 mb-1.5">
-                    <button onClick={() => applyFormat({ fontBold: !ctxNode.fontBold })}
-                      className={`w-7 h-7 rounded border font-bold text-sm transition-colors ${ctxNode.fontBold ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
-                    >B</button>
-                    <button onClick={() => applyFormat({ fontItalic: !ctxNode.fontItalic })}
-                      className={`w-7 h-7 rounded border italic text-sm transition-colors ${ctxNode.fontItalic ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
-                    >i</button>
-                    <div className="w-px bg-gray-200 mx-0.5" />
-                    {CTX_SIZES.map(size => (
-                      <button key={size} onClick={() => applyFormat({ fontSize: size })}
-                        className={`flex-1 h-7 rounded border text-xs transition-colors ${(ctxNode.fontSize ?? 13) === size ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}
-                      >{size}</button>
-                    ))}
-                  </div>
-                  {/* 文字色 */}
-                  <div className="flex gap-1">
-                    {CTX_TEXT_COLORS.map(c => (
-                      <button key={c} onClick={() => applyFormat({ textColor: c })}
-                        className="w-6 h-6 rounded-full border border-gray-200 hover:scale-110 transition-transform"
-                        style={{ backgroundColor: c, outline: (ctxNode.textColor ?? "#ffffff") === c ? "2px solid #6366f1" : "none", outlineOffset: 1 }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
+          {/* 2ノード選択時：位置の入れ替え */}
+          {isBatch && selectedIds.size === 2 && (
+            <>
+              <div className="border-t border-gray-100 my-0.5" />
+              <button onMouseEnter={() => setCtxFlyout(null)} onClick={swapNodePositions}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm text-indigo-600 hover:bg-indigo-50 font-medium flex items-center gap-2"
+              ><span>🔄</span><span>位置を入れ替え</span></button>
+            </>
+          )}
 
-            {ctxSubmenu === "priority" && !isBatch && (
-              <div>
-                <p className="text-xs text-gray-400 mb-1">優先度</p>
-                <div className="flex gap-1 items-center">
-                  <button
-                    onClick={() => {
-                      const next = (ctxNode.priority ?? 2) - 1;
-                      applyFormat({ priority: next < 1 ? undefined : next });
-                    }}
-                    disabled={!ctxNode.priority}
-                    className="w-7 h-7 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-30 flex items-center justify-center"
-                  >−</button>
-                  <input
-                    type="number"
-                    min={1}
-                    value={ctxNode.priority ?? ""}
-                    onChange={e => {
-                      const v = parseInt(e.target.value, 10);
-                      if (e.target.value === "") applyFormat({ priority: undefined });
-                      else if (!isNaN(v) && v >= 1) applyFormat({ priority: v });
-                    }}
-                    onMouseDown={e => e.stopPropagation()}
-                    placeholder="−"
-                    className="w-10 h-7 rounded-lg text-xs font-bold text-center border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    style={{
-                      backgroundColor: ctxNode.priority ? PRIORITY_COLOR : "#e5e7eb",
-                      color: ctxNode.priority ? "white" : "#9ca3af",
-                    }}
-                  />
-                  <button
-                    onClick={() => applyFormat({ priority: (ctxNode.priority ?? 0) + 1 })}
-                    className="w-7 h-7 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 flex items-center justify-center"
-                  >＋</button>
-                  {ctxNode.priority && (
-                    <button
-                      onClick={() => applyFormat({ priority: undefined })}
-                      className="w-6 h-6 rounded-full text-xs border border-gray-200 text-gray-400 hover:bg-gray-50 flex items-center justify-center ml-1"
-                    >✕</button>
-                  )}
-                </div>
-              </div>
-            )}
+          <div className="border-t border-gray-100 my-0.5" />
+          <button onMouseEnter={() => setCtxFlyout(null)}
+            onClick={() => { deleteNodes(isBatch ? selectedIds : new Set([nodeCtxMenu.nodeId])); setNodeCtxMenu(null); }}
+            className="w-full text-left px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 flex items-center gap-2"
+          ><span>🗑️</span><span>{isBatch ? `${selectedIds.size}個を削除` : "削除"}</span></button>
+          </div>{/* /scroll */}
 
-            {ctxSubmenu === "list" && (
-              <>
-                {/* リスト変換 */}
-                {!ctxNode.listItems && ctxNode.noteContent === undefined && (
-                  <div>
-                    <p className="text-xs text-gray-400 mb-1 px-1">リストに変換</p>
-                    <div className="flex flex-col gap-1">
-                      {([
-                        { type: "checkbox" as const, label: "☑", title: "チェック" },
-                        { type: "numbered"  as const, label: "1.", title: "番号付き" },
-                        { type: "bullet"    as const, label: "●", title: "箇条書き" },
-                      ]).map(opt => (
-                        <button
-                          key={opt.type}
-                          title={opt.title}
-                          onClick={() => { convertToList(nodeCtxMenu!.nodeId, opt.type); setNodeCtxMenu(null); }}
-                          className="w-full h-8 rounded-lg border border-gray-200 text-sm text-gray-600 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                        >{opt.label} {opt.title}</button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {ctxNode.listItems && (
+          {/* ── フライアウト（ホバーしたカテゴリの詳細。スクロール枠の外なのでクリップされない） ── */}
+          {ctxFlyout && (
+            <div className="absolute left-full z-10 pl-1.5" style={{ top: ctxFlyout.top }}>
+              <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-3 w-56 flex flex-col gap-2.5">
+                {ctxFlyout.cat === "appearance" && (
                   <>
-                    {/* リストタイプ切り替え */}
+                    {/* 形 */}
                     <div>
-                      <p className="text-xs text-gray-400 mb-1 px-1">リストタイプ</p>
+                      <p className="text-xs text-gray-400 mb-1">形</p>
                       <div className="flex gap-1">
-                        {([
-                          { type: "checkbox" as const, label: "☑", title: "チェック" },
-                          { type: "numbered"  as const, label: "1.", title: "番号" },
-                          { type: "bullet"    as const, label: "●", title: "箇条書き" },
-                        ]).map(opt => (
-                          <button
-                            key={opt.type}
-                            title={opt.title}
-                            onClick={() => applyFormat({ listType: opt.type })}
-                            className={`flex-1 h-7 rounded border text-sm transition-colors ${
-                              (ctxNode.listType ?? "checkbox") === opt.type
-                                ? "border-indigo-400 bg-indigo-50 text-indigo-600"
-                                : "border-gray-200 text-gray-500 hover:border-gray-300"
-                            }`}
-                          >{opt.label}</button>
+                        {CTX_SHAPES.map(s => (
+                          <button key={s.id} onClick={() => applyFormat({ shape: s.id })}
+                            className={`flex-1 h-7 rounded border text-sm transition-colors ${(ctxNode.shape ?? "pill") === s.id ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}
+                          >{s.l}</button>
                         ))}
                       </div>
                     </div>
-                    <button
-                      onClick={() => {
-                        pushUndo();
-                        const upd = nodesRef.current.map(n => n.id === ctxNode.id ? { ...n, listItems: undefined, listType: undefined } : n);
-                        setNodes(upd); onNodesChangeRef.current(upd);
-                        setNodeCtxMenu(null);
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <span>↩️</span><span>通常ノードに戻す</span>
-                    </button>
+                    {/* ノード色 */}
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">ノード色</p>
+                      <div className="grid grid-cols-6 gap-1">
+                        {CTX_COLORS.map(c => (
+                          <button key={c} onClick={() => applyFormat({ color: c })}
+                            className="w-6 h-6 rounded-full border border-gray-200 hover:scale-110 transition-transform"
+                            style={{ backgroundColor: c, outline: ctxNode.color === c ? "2px solid #6366f1" : "none", outlineOffset: 1 }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    {/* テキスト書式 */}
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">テキスト</p>
+                      <div className="flex gap-1 mb-1.5">
+                        <button onClick={() => applyFormat({ fontBold: !ctxNode.fontBold })}
+                          className={`w-7 h-7 rounded border font-bold text-sm transition-colors ${ctxNode.fontBold ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
+                        >B</button>
+                        <button onClick={() => applyFormat({ fontItalic: !ctxNode.fontItalic })}
+                          className={`w-7 h-7 rounded border italic text-sm transition-colors ${ctxNode.fontItalic ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
+                        >i</button>
+                        <div className="w-px bg-gray-200 mx-0.5" />
+                        {CTX_SIZES.map(size => (
+                          <button key={size} onClick={() => applyFormat({ fontSize: size })}
+                            className={`flex-1 h-7 rounded border text-xs transition-colors ${(ctxNode.fontSize ?? 13) === size ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}
+                          >{size}</button>
+                        ))}
+                      </div>
+                      <div className="flex gap-1">
+                        {CTX_TEXT_COLORS.map(c => (
+                          <button key={c} onClick={() => applyFormat({ textColor: c })}
+                            className="w-6 h-6 rounded-full border border-gray-200 hover:scale-110 transition-transform"
+                            style={{ backgroundColor: c, outline: (ctxNode.textColor ?? "#ffffff") === c ? "2px solid #6366f1" : "none", outlineOffset: 1 }}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   </>
                 )}
-                {/* ノートノードはリスト変換できない */}
-                {ctxNode.noteContent !== undefined && !ctxNode.listItems && (
-                  <p className="text-xs text-gray-400 px-1 py-2">ノートノードはリストに変換できません。</p>
-                )}
-              </>
-            )}
 
-            {ctxSubmenu === "more" && (
-              <div className="flex flex-col gap-0.5">
-                <button onClick={() => alignSiblings(nodeCtxMenu.nodeId)}
-                  className="w-full px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">⚡ 兄弟ノードを整列</button>
-                <button onClick={() => {
-                  applyFormat({ isCheckbox: !ctxNode?.isCheckbox, checked: false });
-                  setNodeCtxMenu(null);
-                }} className="w-full px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">
-                  {ctxNode?.isCheckbox ? "☑ チェックボックスを解除" : "☐ チェックボックスノードにする"}
-                </button>
+                {ctxFlyout.cat === "priority" && !isBatch && (
+                  <div>
+                    <p className="text-xs text-gray-400 mb-1">優先度</p>
+                    <div className="flex gap-1 items-center">
+                      <button
+                        onClick={() => { const next = (ctxNode.priority ?? 2) - 1; applyFormat({ priority: next < 1 ? undefined : next }); }}
+                        disabled={!ctxNode.priority}
+                        className="w-7 h-7 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-30 flex items-center justify-center"
+                      >−</button>
+                      <input
+                        type="number" min={1} value={ctxNode.priority ?? ""}
+                        onChange={e => {
+                          const v = parseInt(e.target.value, 10);
+                          if (e.target.value === "") applyFormat({ priority: undefined });
+                          else if (!isNaN(v) && v >= 1) applyFormat({ priority: v });
+                        }}
+                        onMouseDown={e => e.stopPropagation()}
+                        placeholder="−"
+                        className="w-10 h-7 rounded-lg text-xs font-bold text-center border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        style={{ backgroundColor: ctxNode.priority ? PRIORITY_COLOR : "#e5e7eb", color: ctxNode.priority ? "white" : "#9ca3af" }}
+                      />
+                      <button onClick={() => applyFormat({ priority: (ctxNode.priority ?? 0) + 1 })}
+                        className="w-7 h-7 rounded-lg text-sm font-bold text-gray-500 hover:bg-gray-100 flex items-center justify-center"
+                      >＋</button>
+                      {ctxNode.priority && (
+                        <button onClick={() => applyFormat({ priority: undefined })}
+                          className="w-6 h-6 rounded-full text-xs border border-gray-200 text-gray-400 hover:bg-gray-50 flex items-center justify-center ml-1"
+                        >✕</button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {ctxFlyout.cat === "list" && (
+                  <>
+                    {!ctxNode.listItems && ctxNode.noteContent === undefined && (
+                      <div>
+                        <p className="text-xs text-gray-400 mb-1 px-1">リストに変換</p>
+                        <div className="flex flex-col gap-1">
+                          {([
+                            { type: "checkbox" as const, label: "☑", title: "チェック" },
+                            { type: "numbered"  as const, label: "1.", title: "番号付き" },
+                            { type: "bullet"    as const, label: "●", title: "箇条書き" },
+                          ]).map(opt => (
+                            <button key={opt.type} title={opt.title}
+                              onClick={() => { convertToList(nodeCtxMenu!.nodeId, opt.type); setNodeCtxMenu(null); }}
+                              className="w-full h-8 rounded-lg border border-gray-200 text-sm text-gray-600 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                            >{opt.label} {opt.title}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {ctxNode.listItems && (
+                      <>
+                        <div>
+                          <p className="text-xs text-gray-400 mb-1 px-1">リストタイプ</p>
+                          <div className="flex gap-1">
+                            {([
+                              { type: "checkbox" as const, label: "☑", title: "チェック" },
+                              { type: "numbered"  as const, label: "1.", title: "番号" },
+                              { type: "bullet"    as const, label: "●", title: "箇条書き" },
+                            ]).map(opt => (
+                              <button key={opt.type} title={opt.title}
+                                onClick={() => applyFormat({ listType: opt.type })}
+                                className={`flex-1 h-7 rounded border text-sm transition-colors ${
+                                  (ctxNode.listType ?? "checkbox") === opt.type
+                                    ? "border-indigo-400 bg-indigo-50 text-indigo-600"
+                                    : "border-gray-200 text-gray-500 hover:border-gray-300"
+                                }`}
+                              >{opt.label}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            pushUndo();
+                            const upd = nodesRef.current.map(n => n.id === ctxNode.id ? { ...n, listItems: undefined, listType: undefined } : n);
+                            setNodes(upd); onNodesChangeRef.current(upd);
+                            setNodeCtxMenu(null);
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                        ><span>↩️</span><span>通常ノードに戻す</span></button>
+                      </>
+                    )}
+                    {ctxNode.noteContent !== undefined && !ctxNode.listItems && (
+                      <p className="text-xs text-gray-400 px-1 py-2">ノートノードはリストに変換できません。</p>
+                    )}
+                  </>
+                )}
+
+                {ctxFlyout.cat === "more" && (
+                  <div className="flex flex-col gap-0.5">
+                    <button onClick={() => alignSiblings(nodeCtxMenu.nodeId)}
+                      className="w-full px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">⚡ 兄弟ノードを整列</button>
+                    <button onClick={() => { applyFormat({ isCheckbox: !ctxNode?.isCheckbox, checked: false }); setNodeCtxMenu(null); }}
+                      className="w-full px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded-lg">
+                      {ctxNode?.isCheckbox ? "☑ チェックボックスを解除" : "☐ チェックボックスノードにする"}
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </>
+            </div>
           )}
-          </div>{/* /scroll */}
         </div>
       )}
     </div>
