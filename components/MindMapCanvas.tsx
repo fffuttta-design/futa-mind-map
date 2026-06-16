@@ -1375,7 +1375,32 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       if (draggingAreaRef.current) {
         const da = draggingAreaRef.current;
         const cp = getCanvasPos(e.clientX, e.clientY);
-        const dx = cp.x - da.startCx, dy = cp.y - da.startCy;
+        let dx = cp.x - da.startCx, dy = cp.y - da.startCy;
+        // 補助線（整列ガイド）＋スナップ：エリア中心を他ノード/他エリアの中心に合わせる
+        const draggedArea = areasRef.current.find(a => a.id === da.id);
+        if (draggedArea) {
+          const aw = draggedArea.width, ah = draggedArea.height;
+          const cx = da.initX + dx + aw / 2;
+          const cy = da.initY + dy + ah / 2;
+          const SNAP = 8, GUIDE_PAD = 40;
+          const newGuides: { type: "h" | "v"; pos: number; from: number; to: number }[] = [];
+          // 比較対象 = 他ノードの中心 ＋ 他エリアの中心
+          const targets: { x: number; y: number }[] = [
+            ...nodesRef.current.map(n => ({ x: n.x, y: n.y })),
+            ...areasRef.current.filter(a => a.id !== da.id).map(a => ({ x: a.x + a.width / 2, y: a.y + a.height / 2 })),
+          ];
+          for (const t of targets) {
+            if (Math.abs(cy - t.y) < SNAP) {
+              dy = t.y - ah / 2 - da.initY;
+              newGuides.push({ type: "h", pos: t.y, from: Math.min(cx, t.x) - GUIDE_PAD, to: Math.max(cx, t.x) + GUIDE_PAD });
+            }
+            if (Math.abs(cx - t.x) < SNAP) {
+              dx = t.x - aw / 2 - da.initX;
+              newGuides.push({ type: "v", pos: t.x, from: Math.min(cy, t.y) - GUIDE_PAD, to: Math.max(cy, t.y) + GUIDE_PAD });
+            }
+          }
+          setGuides(newGuides);
+        }
         setAreas(prev => prev.map(a => a.id === da.id ? { ...a, x: da.initX + dx, y: da.initY + dy } : a));
         if (da.containedNodeInits.size > 0) {
           setNodes(prev => prev.map(n => {
@@ -1494,6 +1519,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
         }
         draggingAreaRef.current = null;
         resizingAreaRef.current = null;
+        setGuides([]);
         return;
       }
       if (draggingRef.current || resizingRef.current) {
