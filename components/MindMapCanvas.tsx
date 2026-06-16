@@ -304,7 +304,9 @@ function nodeWidth(node: MindMapNode): number {
 
 function nodeHeight(node: MindMapNode): number {
   if (node.noteContent !== undefined) {
-    // ノートノードは常にプレビュー高さ固定（全文はホバーポップアップで表示）
+    // ノートノードはプレビュー高さが既定。手動リサイズ（customHeight）があればそれを優先。
+    // 全文はダブルクリックのポップアップで表示・編集する。
+    if (node.customHeight) return Math.max(node.customHeight, LIST_HEADER_H + 28);
     return LIST_HEADER_H + NOTE_PREVIEW_H;
   }
   if (node.listItems) {
@@ -1172,6 +1174,29 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     // 確定後はポップアップを閉じる
     setNoteHoverPopup(null);
   }, [noteHoverPopup, popupEditText]);
+
+  // ノートノードのポップアップを開く（ダブルクリック / メニューから）。
+  // startEditing=true で編集モード（マークダウン）に入る。閲覧権限では表示のみ。
+  const openNotePopupEditor = useCallback((nodeId: string, startEditing: boolean) => {
+    const node = nodesRef.current.find(n => n.id === nodeId);
+    const svg = svgRef.current;
+    if (!node || !svg) return;
+    const r = svg.getBoundingClientRect();
+    const w = nodeWidth(node), h = nodeHeight(node);
+    const z = zoomRef.current, p = panRef.current;
+    setNoteHoverPopup({
+      nodeId,
+      x: r.width / 2 + p.x + (node.x + w / 2) * z + 4,
+      y: r.height / 2 + p.y + (node.y - h / 2) * z,
+    });
+    if (startEditing && !readOnly) {
+      setPopupEditText(stripHtml(node.noteContent || ""));
+      setPopupEditing(true);
+      setTimeout(() => popupEditRef.current?.focus(), 30);
+    } else {
+      setPopupEditing(false);
+    }
+  }, [readOnly]);
 
   const commitListItemEdit = useCallback(() => {
     if (!editingListItem) return;
@@ -2050,11 +2075,10 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                         onMouseDown={e => e.stopPropagation()}
                         onDoubleClick={e => {
                           e.stopPropagation();
-                          if (readOnly) return;
-                          setNoteBodyText(stripHtml(node.noteContent || ""));
-                          setNoteBodyEditingId(node.id);
+                          // ダブルクリックでポップアップを開く。編集者は編集モード、閲覧者は表示のみ。
+                          openNotePopupEditor(node.id, !readOnly);
                         }}
-                        style={{ cursor: "text" }}
+                        style={{ cursor: readOnly ? "pointer" : "text" }}
                       />
                       {/* テキスト（clipPath でボディ領域にクリップ） */}
                       <clipPath id={`cnote-${node.id}`}>
@@ -2090,8 +2114,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                             </linearGradient>
                           </defs>
                           <rect
-                            x={-w / 2 + 1} y={-h / 2 + LIST_HEADER_H + NOTE_PREVIEW_H * 0.35}
-                            width={w - 2} height={NOTE_PREVIEW_H * 0.65}
+                            x={-w / 2 + 1} y={h / 2 - (h - LIST_HEADER_H) * 0.45}
+                            width={w - 2} height={(h - LIST_HEADER_H) * 0.45}
                             fill={`url(#nfade-${node.id})`}
                             style={{ pointerEvents: "none" }}
                           />
@@ -2115,15 +2139,15 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                       strokeWidth={isSelected ? 2 : nodeBorderWidth > 0 ? nodeBorderWidth : 1}
                       style={{ pointerEvents: "none" }}
                     />
-                    {/* 横幅リサイズハンドル（高さはプレビュー固定。左右で幅のみ調整） */}
+                    {/* リサイズハンドル（四隅。幅も高さも調整可） */}
                     {isSelected && !readOnly && !editingId && !noteBodyEditingId && (
-                      [["se", w / 2, h / 2], ["ne", w / 2, -h / 2]] as ["se" | "ne", number, number][]
+                      [["se", w / 2, h / 2], ["sw", -w / 2, h / 2], ["ne", w / 2, -h / 2], ["nw", -w / 2, -h / 2]] as ["se" | "sw" | "ne" | "nw", number, number][]
                     ).map(([corner, hx, hy]) => (
                       <rect
                         key={`resize-${corner}`}
                         x={hx - 5} y={hy - 5} width={10} height={10}
                         fill="white" stroke="#6366f1" strokeWidth={1.5} rx={2}
-                        style={{ cursor: "ew-resize", pointerEvents: "all" }}
+                        style={{ cursor: (corner === "se" || corner === "nw") ? "nwse-resize" : "nesw-resize", pointerEvents: "all" }}
                         onMouseDown={e => {
                           e.stopPropagation();
                           pushUndo();
@@ -2838,8 +2862,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       {/* ノートホバープレビューポップアップ */}
       {noteHoverPopup && (() => {
         const popNode = nodes.find(n => n.id === noteHoverPopup.nodeId);
-        if (!popNode || !popNode.noteContent) return null;
-        const lines = parseMdLines(popNode.noteContent);
+        if (!popNode || popNode.noteContent === undefined) return null;
+        const lines = parseMdLines(popNode.noteContent || "");
         // ノードの右隣に表示（noteHoverPopup.x は SVGコンテナ内座標でノード右端＋余白）。
         // コンテナ右端で完全にはみ出す場合のみ、ノードの左側へ回り込ませる保険。
         const POPUP_W = 280;
@@ -3150,7 +3174,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                 onClick={() => {
                   applyFormat({ noteContent: "" });
                   setNodeCtxMenu(null);
-                  setTimeout(() => { setNoteBodyText(""); setNoteBodyEditingId(ctxNode.id); }, 50);
+                  // ノード更新の反映後にポップアップ編集を開く
+                  setTimeout(() => openNotePopupEditor(ctxNode.id, true), 60);
                 }}
                 className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
               ><span>📝</span><span>ノートを追加</span></button>
@@ -3158,9 +3183,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
               <>
                 <button
                   onClick={() => {
-                    setNoteBodyText(stripHtml(ctxNode.noteContent || ""));
-                    setNoteBodyEditingId(ctxNode.id);
                     setNodeCtxMenu(null);
+                    openNotePopupEditor(ctxNode.id, true);
                   }}
                   className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                 ><span>📝</span><span>ノートを編集</span></button>
