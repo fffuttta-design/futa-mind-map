@@ -472,6 +472,15 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   const [popupEditing, setPopupEditing] = useState(false);
   const [popupEditText, setPopupEditText] = useState("");
   const popupEditRef = useRef<HTMLTextAreaElement>(null);
+  // ノート編集モーダル（前面に出る大きめエディタ。Markdown＋ライブプレビュー）
+  const [noteModalId, setNoteModalId] = useState<string | null>(null);
+  const [noteModalText, setNoteModalText] = useState("");
+  const noteModalIdRef = useRef<string | null>(null);
+  const noteModalTextRef = useRef("");
+  const noteModalSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noteModalTextareaRef = useRef<HTMLTextAreaElement>(null);
+  noteModalIdRef.current = noteModalId;
+  noteModalTextRef.current = noteModalText;
   // タグ・友だち情報ポップアップ（開いているノードID）
   const [tagFieldPopupId, setTagFieldPopupId] = useState<string | null>(null);
   const noteHoverShowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1175,28 +1184,44 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     setNoteHoverPopup(null);
   }, [noteHoverPopup, popupEditText]);
 
-  // ノートノードのポップアップを開く（ダブルクリック / メニューから）。
-  // startEditing=true で編集モード（マークダウン）に入る。閲覧権限では表示のみ。
-  const openNotePopupEditor = useCallback((nodeId: string, startEditing: boolean) => {
+  // 編集中テキストをノードへ反映（デバウンスで呼ぶ）。
+  const flushNoteModal = useCallback(() => {
+    const id = noteModalIdRef.current;
+    if (!id) return;
+    localModifiedAt.current = Date.now();
+    const text = noteModalTextRef.current;
+    const upd = nodesRef.current.map(n => n.id === id ? { ...n, noteContent: text } : n);
+    setNodes(upd);
+    onNodesChangeRef.current(upd);
+  }, []);
+
+  // ノート編集モーダルを開く（ダブルクリック / メニュー / プレビュークリックから）。
+  // 編集権限がある時だけ編集可。閲覧権限では表示のみ（modal自体は誰でも開ける）。
+  const openNoteModal = useCallback((nodeId: string) => {
     const node = nodesRef.current.find(n => n.id === nodeId);
-    const svg = svgRef.current;
-    if (!node || !svg) return;
-    const r = svg.getBoundingClientRect();
-    const w = nodeWidth(node), h = nodeHeight(node);
-    const z = zoomRef.current, p = panRef.current;
-    setNoteHoverPopup({
-      nodeId,
-      x: r.width / 2 + p.x + (node.x + w / 2) * z + 4,
-      y: r.height / 2 + p.y + (node.y - h / 2) * z,
-    });
-    if (startEditing && !readOnly) {
-      setPopupEditText(stripHtml(node.noteContent || ""));
-      setPopupEditing(true);
-      setTimeout(() => popupEditRef.current?.focus(), 30);
-    } else {
-      setPopupEditing(false);
-    }
-  }, [readOnly]);
+    if (!node || node.noteContent === undefined) return;
+    setNoteHoverPopup(null);
+    setNodeCtxMenu(null);
+    if (!readOnly) pushUndo();
+    setNoteModalText(stripHtml(node.noteContent || ""));
+    setNoteModalId(nodeId);
+    setTimeout(() => noteModalTextareaRef.current?.focus(), 40);
+  }, [readOnly, pushUndo]);
+
+  // モーダルを閉じる（保存をフラッシュしてから）。
+  const closeNoteModal = useCallback(() => {
+    if (noteModalSaveTimer.current) { clearTimeout(noteModalSaveTimer.current); noteModalSaveTimer.current = null; }
+    if (!readOnly) flushNoteModal();
+    setNoteModalId(null);
+  }, [readOnly, flushNoteModal]);
+
+  // テキスト変更：ローカルに保持し、600msデバウンスでノードへ反映（キャンバス再描画を間引く）。
+  const onNoteModalChange = useCallback((text: string) => {
+    setNoteModalText(text);
+    if (readOnly) return;
+    if (noteModalSaveTimer.current) clearTimeout(noteModalSaveTimer.current);
+    noteModalSaveTimer.current = setTimeout(() => flushNoteModal(), 600);
+  }, [readOnly, flushNoteModal]);
 
   const commitListItemEdit = useCallback(() => {
     if (!editingListItem) return;
@@ -1288,9 +1313,19 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     if (exportRef) exportRef.current = { exportSVG, exportPNG };
   }, [exportRef, exportSVG, exportPNG]);
 
+  // ノート編集モーダル: Esc で閉じる（閲覧者＝textareaが無い場合もカバー）
+  useEffect(() => {
+    if (noteModalId === null) return;
+    const onEsc = (e: KeyboardEvent) => { if (e.key === "Escape") closeNoteModal(); };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [noteModalId, closeNoteModal]);
+
   useEffect(() => {
     if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
+      // ノート編集モーダルが開いている間はグローバルショートカットを無効化
+      if (noteModalIdRef.current) return;
       // INPUT/TEXTAREA/contentEditable要素ではグローバルショートカットを無効化
       const active = document.activeElement as HTMLElement | null;
       if (active && (
@@ -2075,8 +2110,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                         onMouseDown={e => e.stopPropagation()}
                         onDoubleClick={e => {
                           e.stopPropagation();
-                          // ダブルクリックでポップアップを開く。編集者は編集モード、閲覧者は表示のみ。
-                          openNotePopupEditor(node.id, !readOnly);
+                          // ダブルクリックで前面の編集モーダルを開く（閲覧者は表示のみ）。
+                          openNoteModal(node.id);
                         }}
                         style={{ cursor: readOnly ? "pointer" : "text" }}
                       />
@@ -2898,42 +2933,81 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
               paddingBottom: 6, borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 5 }}>
               <span style={{ background: popNode.color, borderRadius: 3, width: 8, height: 8, display: "inline-block", flexShrink: 0 }} />
               {popNode.text}
-              {!readOnly && !popupEditing && (
-                <span style={{ marginLeft: "auto", fontSize: 10, color: "#94a3b8" }}>クリックで編集</span>
-              )}
+              <span style={{ marginLeft: "auto", fontSize: 10, color: "#94a3b8" }}>{readOnly ? "クリックで全文" : "クリックで編集"}</span>
             </div>
-            {/* 本文：通常はMarkdown表示。クリックでその場編集（A方式） */}
-            {popupEditing ? (
-              <textarea
-                ref={popupEditRef}
-                value={popupEditText}
-                onChange={e => setPopupEditText(e.target.value)}
-                onBlur={commitPopupEdit}
-                onKeyDown={e => {
-                  e.stopPropagation();
-                  if (e.key === "Escape") { e.preventDefault(); commitPopupEdit(); }
-                }}
-                style={{
-                  width: "100%", minHeight: 160, maxHeight: 320,
-                  fontSize: 12, lineHeight: "1.6", color: "#334155",
-                  border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px",
-                  outline: "none", resize: "vertical", fontFamily: "inherit",
-                  boxSizing: "border-box",
-                }}
-              />
-            ) : (
-              <div
-                style={{ userSelect: "none", cursor: readOnly ? "default" : "text" }}
-                onClick={() => {
-                  if (readOnly) return;
-                  setPopupEditText(stripHtml(popNode.noteContent || ""));
-                  setPopupEditing(true);
-                  setTimeout(() => popupEditRef.current?.focus(), 0);
-                }}
-              >
-                {renderMdHTML(lines)}
+            {/* 本文プレビュー（クリックで前面エディタを開く） */}
+            <div
+              style={{ userSelect: "none", cursor: "pointer" }}
+              onClick={() => openNoteModal(popNode.id)}
+            >
+              {renderMdHTML(lines)}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ノート編集モーダル（前面・大きめ。Markdown 入力＋ライブプレビュー） */}
+      {noteModalId !== null && (() => {
+        const mNode = nodes.find(n => n.id === noteModalId);
+        if (!mNode || mNode.noteContent === undefined) return null;
+        const previewLines = parseMdLines(noteModalText);
+        return (
+          <div
+            style={{
+              position: "absolute", inset: 0, zIndex: 80,
+              background: "rgba(15,23,42,0.45)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              padding: 24,
+            }}
+            onMouseDown={() => closeNoteModal()}
+          >
+            <div
+              style={{
+                width: "min(960px, 94vw)", height: "min(82vh, 760px)",
+                background: "white", borderRadius: 16,
+                boxShadow: "0 24px 64px rgba(0,0,0,0.30)",
+                display: "flex", flexDirection: "column", overflow: "hidden",
+              }}
+              onMouseDown={e => e.stopPropagation()}
+            >
+              {/* ヘッダー */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: "1px solid #eef2f7" }}>
+                <span style={{ background: mNode.color, borderRadius: 4, width: 12, height: 12, display: "inline-block", flexShrink: 0 }} />
+                <span style={{ fontWeight: 700, fontSize: 15, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mNode.text}</span>
+                <span style={{ marginLeft: 8, fontSize: 11, color: "#94a3b8" }}>{readOnly ? "閲覧のみ" : "Markdown対応・自動保存"}</span>
+                <button
+                  onClick={() => closeNoteModal()}
+                  style={{ marginLeft: "auto", border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, color: "#64748b", padding: "0 4px" }}
+                  title="閉じる (Esc)"
+                >×</button>
               </div>
-            )}
+              {/* 本体：編集者は左=入力 / 右=プレビュー、閲覧者はプレビューのみ */}
+              <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+                {!readOnly && (
+                  <textarea
+                    ref={noteModalTextareaRef}
+                    value={noteModalText}
+                    onChange={e => onNoteModalChange(e.target.value)}
+                    onKeyDown={e => {
+                      e.stopPropagation();
+                      if (e.key === "Escape") { e.preventDefault(); closeNoteModal(); }
+                    }}
+                    placeholder={"ここに本文を書く…\n\n# 見出し\n- 箇条書き\n**太字** など Markdown が使えます"}
+                    style={{
+                      flex: 1, minWidth: 0, height: "100%", boxSizing: "border-box",
+                      padding: "16px 18px", border: "none", borderRight: "1px solid #eef2f7",
+                      outline: "none", resize: "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                      fontSize: 13.5, lineHeight: "1.7", color: "#0f172a",
+                    }}
+                  />
+                )}
+                <div style={{ flex: 1, minWidth: 0, height: "100%", overflowY: "auto", padding: "16px 20px", background: readOnly ? "white" : "#fcfcfd" }}>
+                  {noteModalText.trim()
+                    ? renderMdHTML(previewLines)
+                    : <p style={{ color: "#cbd5e1", fontStyle: "italic", fontSize: 13 }}>（本文なし）</p>}
+                </div>
+              </div>
+            </div>
           </div>
         );
       })()}
@@ -3174,8 +3248,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                 onClick={() => {
                   applyFormat({ noteContent: "" });
                   setNodeCtxMenu(null);
-                  // ノード更新の反映後にポップアップ編集を開く
-                  setTimeout(() => openNotePopupEditor(ctxNode.id, true), 60);
+                  // ノード更新の反映後にモーダル編集を開く
+                  setTimeout(() => openNoteModal(ctxNode.id), 60);
                 }}
                 className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
               ><span>📝</span><span>ノートを追加</span></button>
@@ -3184,7 +3258,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                 <button
                   onClick={() => {
                     setNodeCtxMenu(null);
-                    openNotePopupEditor(ctxNode.id, true);
+                    openNoteModal(ctxNode.id);
                   }}
                   className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                 ><span>📝</span><span>ノートを編集</span></button>
