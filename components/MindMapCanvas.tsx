@@ -4,7 +4,9 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { MindMapNode, StickyNote, CanvasArea, Connection, ListItem, TagGroup, TagDef, FriendFieldDef } from "@/types";
 import NodeToolbar from "./NodeToolbar";
 import NodeTagFieldPopup from "./NodeTagFieldPopup";
+import NoteEditor from "./NoteEditor";
 import { uploadImageSrc, uploadImageFile } from "@/lib/uploadImage";
+import { noteContentToMarkdown } from "@/lib/noteMarkdown";
 
 interface Props {
   mapId?: string;
@@ -474,13 +476,10 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   const popupEditRef = useRef<HTMLTextAreaElement>(null);
   // ノート編集モーダル（前面に出る大きめエディタ。Markdown＋ライブプレビュー）
   const [noteModalId, setNoteModalId] = useState<string | null>(null);
-  const [noteModalText, setNoteModalText] = useState("");
   const noteModalIdRef = useRef<string | null>(null);
-  const noteModalTextRef = useRef("");
-  const noteModalSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const noteModalTextareaRef = useRef<HTMLTextAreaElement>(null);
   noteModalIdRef.current = noteModalId;
-  noteModalTextRef.current = noteModalText;
+  // 編集対象ノードid（モーダルを閉じてエディタが unmount された後の最終保存でも正しく書けるよう保持）
+  const openNoteIdRef = useRef<string | null>(null);
   // タグ・友だち情報ポップアップ（開いているノードID）
   const [tagFieldPopupId, setTagFieldPopupId] = useState<string | null>(null);
   const noteHoverShowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1184,16 +1183,15 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     setNoteHoverPopup(null);
   }, [noteHoverPopup, popupEditText]);
 
-  // 編集中テキストをノードへ反映（デバウンスで呼ぶ）。
-  const flushNoteModal = useCallback(() => {
-    const id = noteModalIdRef.current;
-    if (!id) return;
+  // エディタからの内容（TipTap JSON 文字列）をノードへ保存。
+  const saveNoteModalContent = useCallback((json: string) => {
+    const id = openNoteIdRef.current;
+    if (!id || readOnly) return;
     localModifiedAt.current = Date.now();
-    const text = noteModalTextRef.current;
-    const upd = nodesRef.current.map(n => n.id === id ? { ...n, noteContent: text } : n);
+    const upd = nodesRef.current.map(n => n.id === id ? { ...n, noteContent: json } : n);
     setNodes(upd);
     onNodesChangeRef.current(upd);
-  }, []);
+  }, [readOnly]);
 
   // ノート編集モーダルを開く（ダブルクリック / メニュー / プレビュークリックから）。
   // 編集権限がある時だけ編集可。閲覧権限では表示のみ（modal自体は誰でも開ける）。
@@ -1203,25 +1201,14 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     setNoteHoverPopup(null);
     setNodeCtxMenu(null);
     if (!readOnly) pushUndo();
-    setNoteModalText(stripHtml(node.noteContent || ""));
+    openNoteIdRef.current = nodeId;
     setNoteModalId(nodeId);
-    setTimeout(() => noteModalTextareaRef.current?.focus(), 40);
   }, [readOnly, pushUndo]);
 
-  // モーダルを閉じる（保存をフラッシュしてから）。
+  // モーダルを閉じる（エディタ unmount 時に最終保存が走る）。
   const closeNoteModal = useCallback(() => {
-    if (noteModalSaveTimer.current) { clearTimeout(noteModalSaveTimer.current); noteModalSaveTimer.current = null; }
-    if (!readOnly) flushNoteModal();
     setNoteModalId(null);
-  }, [readOnly, flushNoteModal]);
-
-  // テキスト変更：ローカルに保持し、600msデバウンスでノードへ反映（キャンバス再描画を間引く）。
-  const onNoteModalChange = useCallback((text: string) => {
-    setNoteModalText(text);
-    if (readOnly) return;
-    if (noteModalSaveTimer.current) clearTimeout(noteModalSaveTimer.current);
-    noteModalSaveTimer.current = setTimeout(() => flushNoteModal(), 600);
-  }, [readOnly, flushNoteModal]);
+  }, []);
 
   const commitListItemEdit = useCallback(() => {
     if (!editingListItem) return;
@@ -2111,9 +2098,9 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                         <rect x={-w / 2} y={-h / 2 + LIST_HEADER_H} width={w} height={h - LIST_HEADER_H} />
                       </clipPath>
                       <g clipPath={`url(#cnote-${node.id})`} style={{ pointerEvents: "none" }}>
-                        {node.noteContent
+                        {noteContentToMarkdown(node.noteContent).trim()
                           ? renderMdSVG(
-                              parseMdLines(node.noteContent),
+                              parseMdLines(noteContentToMarkdown(node.noteContent)),
                               -w / 2 + 10,
                               -h / 2 + LIST_HEADER_H + 10,
                               w,
@@ -2131,7 +2118,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                         }
                       </g>
                       {/* プレビュー下部のフェードアウト（続きがあることを示す） */}
-                      {node.noteContent && (
+                      {noteContentToMarkdown(node.noteContent).trim() && (
                         <>
                           <defs>
                             <linearGradient id={`nfade-${node.id}`} x1="0" y1="0" x2="0" y2="1">
@@ -2889,7 +2876,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       {noteHoverPopup && (() => {
         const popNode = nodes.find(n => n.id === noteHoverPopup.nodeId);
         if (!popNode || popNode.noteContent === undefined) return null;
-        const lines = parseMdLines(popNode.noteContent || "");
+        const lines = parseMdLines(noteContentToMarkdown(popNode.noteContent));
         // ノードの右隣に表示（noteHoverPopup.x は SVGコンテナ内座標でノード右端＋余白）。
         // コンテナ右端で完全にはみ出す場合のみ、ノードの左側へ回り込ませる保険。
         const POPUP_W = 280;
@@ -2941,7 +2928,6 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       {noteModalId !== null && (() => {
         const mNode = nodes.find(n => n.id === noteModalId);
         if (!mNode || mNode.noteContent === undefined) return null;
-        const previewLines = parseMdLines(noteModalText);
         return (
           <div
             style={{
@@ -2965,39 +2951,20 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: "1px solid #eef2f7" }}>
                 <span style={{ background: mNode.color, borderRadius: 4, width: 12, height: 12, display: "inline-block", flexShrink: 0 }} />
                 <span style={{ fontWeight: 700, fontSize: 15, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mNode.text}</span>
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#94a3b8" }}>{readOnly ? "閲覧のみ" : "Markdown対応・自動保存"}</span>
+                <span style={{ marginLeft: 8, fontSize: 11, color: "#94a3b8" }}>{readOnly ? "閲覧のみ" : "リアルタイム・自動保存"}</span>
                 <button
                   onClick={() => closeNoteModal()}
                   style={{ marginLeft: "auto", border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, color: "#64748b", padding: "0 4px" }}
                   title="閉じる (Esc)"
                 >×</button>
               </div>
-              {/* 本体：編集者は左=入力 / 右=プレビュー、閲覧者はプレビューのみ */}
-              <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-                {!readOnly && (
-                  <textarea
-                    ref={noteModalTextareaRef}
-                    value={noteModalText}
-                    onChange={e => onNoteModalChange(e.target.value)}
-                    onKeyDown={e => {
-                      e.stopPropagation();
-                      if (e.key === "Escape") { e.preventDefault(); closeNoteModal(); }
-                    }}
-                    placeholder={"ここに本文を書く…\n\n# 見出し\n- 箇条書き\n**太字** など Markdown が使えます"}
-                    style={{
-                      flex: 1, minWidth: 0, height: "100%", boxSizing: "border-box",
-                      padding: "16px 18px", border: "none", borderRight: "1px solid #eef2f7",
-                      outline: "none", resize: "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                      fontSize: 13.5, lineHeight: "1.7", color: "#0f172a",
-                    }}
-                  />
-                )}
-                <div style={{ flex: 1, minWidth: 0, height: "100%", overflowY: "auto", padding: "16px 20px", background: readOnly ? "white" : "#fcfcfd" }}>
-                  {noteModalText.trim()
-                    ? renderMdHTML(previewLines)
-                    : <p style={{ color: "#cbd5e1", fontStyle: "italic", fontSize: 13 }}>（本文なし）</p>}
-                </div>
-              </div>
+              {/* 本体：リッチエディタ（リアルタイムプレビュー） */}
+              <NoteEditor
+                key={noteModalId}
+                initialContent={mNode.noteContent}
+                onChange={saveNoteModalContent}
+                readOnly={readOnly}
+              />
             </div>
           </div>
         );
