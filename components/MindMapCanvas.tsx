@@ -833,10 +833,21 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   }, [nodes, updateNodes, addChild]);
 
   const deleteNodes = useCallback((ids: Set<string>) => {
-    const toDelete = new Set<string>();
-    const collect = (id: string) => { toDelete.add(id); nodes.filter(n => n.parentId === id).forEach(n => collect(n.id)); };
-    ids.forEach(id => { if (id !== "root") collect(id); });
-    updateNodes(nodes.filter(n => !toDelete.has(n.id)));
+    // 選択したノード「だけ」を削除し、その子は削除されない最も近い祖先に繋ぎ替える。
+    // → 中間ノードを消すと、前半（親）と後半（子）が自動でつながる。
+    const toDelete = new Set<string>([...ids].filter(id => id !== "root"));
+    if (toDelete.size === 0) return;
+    const byId = new Map(nodes.map(n => [n.id, n]));
+    // 親を上にたどり、削除対象でない最初の祖先（無ければ null）を返す
+    const resolveParent = (pid: string | null): string | null => {
+      let p = pid;
+      while (p && toDelete.has(p)) p = byId.get(p)?.parentId ?? null;
+      return p;
+    };
+    const next = nodes
+      .filter(n => !toDelete.has(n.id))
+      .map(n => (n.parentId && toDelete.has(n.parentId)) ? { ...n, parentId: resolveParent(n.parentId) } : n);
+    updateNodes(next);
     setSelectedIds(new Set());
   }, [nodes, updateNodes]);
 
@@ -1849,11 +1860,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                 {node.noteContent !== undefined ? (
                   // ── ノートノード ──
                   <>
-                    <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={8}
-                      fill="white"
-                      stroke={isSelected ? "#6366f1" : "#000000"}
-                      strokeWidth={isSelected ? 2 : nodeBorderWidth > 0 ? nodeBorderWidth : 1}
-                    />
+                    <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={8} fill="white" />
                     <rect x={-w / 2} y={-h / 2} width={w} height={LIST_HEADER_H} rx={8} fill={node.color} />
                     <rect x={-w / 2} y={-h / 2 + LIST_HEADER_H - 8} width={w} height={8} fill={node.color} />
                     {editingId !== node.id && (
@@ -1932,6 +1939,13 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                         </text>
                       </g>
                     )}
+                    {/* 枠線は最前面に描く（ヘッダー色や本文に上書きされて枠線が欠けるのを防ぐ） */}
+                    <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={8}
+                      fill="none"
+                      stroke={isSelected ? "#6366f1" : "#000000"}
+                      strokeWidth={isSelected ? 2 : nodeBorderWidth > 0 ? nodeBorderWidth : 1}
+                      style={{ pointerEvents: "none" }}
+                    />
                     {/* 横幅リサイズハンドル（高さはプレビュー固定。左右で幅のみ調整） */}
                     {isSelected && !readOnly && !editingId && !noteBodyEditingId && (
                       [["se", w / 2, h / 2], ["ne", w / 2, -h / 2]] as ["se" | "ne", number, number][]
