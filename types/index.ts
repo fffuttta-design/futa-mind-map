@@ -92,6 +92,14 @@ export interface CanvasArea {
   color: string;
 }
 
+// ノード同士を自由につなぐ関連線（親子ツリーとは別物）。
+export interface Connection {
+  id: string;
+  from: string;   // 始点ノード id
+  to: string;     // 終点ノード id
+  color?: string; // 線の色（省略時はデフォルトのグレー）
+}
+
 export interface StickyNote {
   id: string;
   x: number;
@@ -124,6 +132,7 @@ export interface MindMap {
   nodeBorderWidth?: number;
   stickyNotes?: StickyNote[];
   areas?: CanvasArea[];
+  connections?: Connection[];
   mode?: "mindmap" | "line";
   // タグ・友だち情報マスタ（Lステップ風）。既存の tags?: string[] とは別物。
   tagGroups?: TagGroup[];

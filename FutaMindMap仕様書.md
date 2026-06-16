@@ -3,7 +3,7 @@
 > このドキュメントは **FutaMindMap（ふたマインドマップ）** の全機能・構成・データ構造を網羅した仕様書です。
 > 開発・改修の前に必ず読み込み、機能を変更したら **この仕様書も併せて更新** すること（詳細は `CLAUDE.md`）。
 >
-> - 最終更新基準: アプリ v1.8.0 / デスクトップ v1.3.0（NSIS + electron-updater へ移行）
+> - 最終更新基準: アプリ v1.9.0 / デスクトップ v1.3.0（NSIS + electron-updater へ移行）
 > - リポジトリ: `https://github.com/fffuttta-design/futa-mind-map`（ブランチ `main`）
 > - 本番URL（Web）: `https://futa-mind-map.vercel.app`
 
@@ -170,6 +170,13 @@ futa-mind-map/
 - 背景でカラフルな付箋を配置（黄/ピンク/緑/青/紫/オレンジ）。テキスト編集、移動、リサイズ、色変更、削除。
 - 背景の右クリックメニュー「📌 付箋」で追加。
 
+### 5-3b. 関連線（Connection）
+- **親子ツリーとは別**に、任意のノード同士を自由につなぐ線。枝をまたいだ「関連」を表現する。
+- **作成**: ノードにホバー（または選択）すると四辺に **接続ハンドル（teal の ◦）** が出る。そこから**ドラッグして相手ノードの上で離す**と接続。空白で離すとキャンセル。
+- **見た目**: グレーの**破線＋矢印**。`edgeStyle`（曲線/直線）に追従。
+- **削除**: 線をクリックで選択（青くハイライト）→ 中点の **✕** をクリック、または Delete キー。
+- **データ**: `MindMap.connections: Connection[]`（`{ id, from, to, color? }`）。ノード削除時は両端を参照する線も自動で掃除。Undo/Redo・SVG/PNG エクスポート・公開ページにも反映。
+
 ### 5-4. エリア（CanvasArea）
 - ノードをグルーピングする矩形領域。タイトル・色付き。移動するとエリア内ノードも連動。リサイズ可。
 - 背景の右クリックメニュー「🗂️ エリア」で追加。
@@ -279,6 +286,7 @@ interface MindMap {
   nodeBorderWidth?: number;
   stickyNotes?: StickyNote[];
   areas?: CanvasArea[];
+  connections?: Connection[];      // ノード同士の関連線（親子ツリーとは別）
   mode?: "mindmap" | "line";
   tagGroups?: TagGroup[];          // Lステップ風タグマスタ
   tagDefs?: TagDef[];
@@ -312,6 +320,7 @@ interface MindMapNode {
 - `TagGroup { id, name }` / `TagDef { id, name, color, groupId|null }` / `FriendFieldDef { id, name }`
 - `LineMessageData`（type=text/button/carousel）/ `LineButton` / `LineCarouselCard`
 - `CanvasArea { id, x, y, width, height, title, color }`
+- `Connection { id, from, to, color? }` … ノード同士の関連線（from/to はノード id）
 - `StickyNote { id, x, y, text, color, width, height }`
 - `HistoryEntry { id, nodes, savedAt, name? }`
 

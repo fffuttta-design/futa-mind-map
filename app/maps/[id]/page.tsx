@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { doc, onSnapshot, updateDoc, addDoc, collection, query, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
-import { MindMap, MindMapNode, StickyNote, CanvasArea, LineMessageData, HistoryEntry } from "@/types";
+import { MindMap, MindMapNode, StickyNote, CanvasArea, Connection, LineMessageData, HistoryEntry } from "@/types";
 import MindMapCanvas from "@/components/MindMapCanvas";
 import LineMessagePanel from "@/components/LineMessagePanel";
 import LinePreviewModal from "@/components/LinePreviewModal";
@@ -63,6 +63,7 @@ export default function MapEditorPage() {
     nodes?: MindMapNode[];
     stickyNotes?: StickyNote[];
     areas?: CanvasArea[];
+    connections?: Connection[];
   }>({});
 
   useEffect(() => {
@@ -153,6 +154,11 @@ export default function MapEditorPage() {
 
   const saveAreas = useCallback((areas: CanvasArea[]) => {
     pendingSave.current = { ...pendingSave.current, areas };
+    scheduleSave();
+  }, [scheduleSave]);
+
+  const saveConnections = useCallback((connections: Connection[]) => {
+    pendingSave.current = { ...pendingSave.current, connections };
     scheduleSave();
   }, [scheduleSave]);
 
@@ -364,6 +370,8 @@ export default function MapEditorPage() {
                 onStickyNotesChange={saveStickyNotes}
                 initialAreas={map.areas}
                 onAreasChange={saveAreas}
+                initialConnections={map.connections}
+                onConnectionsChange={saveConnections}
                 onSelectionChange={setSelectedNodeId}
                 mode={map.mode ?? "mindmap"}
                 exportRef={exportRef}

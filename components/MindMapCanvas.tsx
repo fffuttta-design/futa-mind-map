@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { MindMapNode, StickyNote, CanvasArea, ListItem, TagGroup, TagDef, FriendFieldDef } from "@/types";
+import { MindMapNode, StickyNote, CanvasArea, Connection, ListItem, TagGroup, TagDef, FriendFieldDef } from "@/types";
 import NodeToolbar from "./NodeToolbar";
 import NodeTagFieldPopup from "./NodeTagFieldPopup";
 import { uploadImageSrc, uploadImageFile } from "@/lib/uploadImage";
@@ -21,6 +21,8 @@ interface Props {
   nodeBorderWidth?: number;
   initialAreas?: CanvasArea[];
   onAreasChange?: (areas: CanvasArea[]) => void;
+  initialConnections?: Connection[];
+  onConnectionsChange?: (connections: Connection[]) => void;
   onNoteOpen?: (nodeId: string) => void;
   // タグ・友だち情報マスタ（Lステップ風）
   tagGroups?: TagGroup[];
@@ -367,7 +369,7 @@ function NodeShape({ node, w, h, isSelected, borderWidth = 0 }: { node: MindMapN
   }
 }
 
-function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = "curve"): string {
+function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = "curve", connections: Connection[] = []): string {
   const pad = 60;
   const xs = nodes.map(n => [n.x - nodeWidth(n) / 2, n.x + nodeWidth(n) / 2]).flat();
   const ys = nodes.map(n => [n.y - nodeHeight(n) / 2, n.y + nodeHeight(n) / 2]).flat();
@@ -379,6 +381,15 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
     const p = nodes.find(x => x.id === n.parentId)!;
     const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
     return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>`;
+  }).join("\n");
+
+  // 関連線（破線＋矢印）
+  const connDefs = `<defs><marker id="ex-conn-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker></defs>`;
+  const connEls = connections.map(c => {
+    const a = nodes.find(n => n.id === c.from), b = nodes.find(n => n.id === c.to);
+    if (!a || !b || !vids.has(a.id) || !vids.has(b.id)) return "";
+    const { x1, y1, x2, y2, v } = calcEdgePoints(a, b);
+    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${c.color ?? "#64748b"}" stroke-width="2" stroke-dasharray="6 5" stroke-opacity="0.8" marker-end="url(#ex-conn-arrow)"/>`;
   }).join("\n");
 
   const nodeEls = nodes.map(node => {
@@ -402,10 +413,10 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
     return `${shapeEl}\n${iconEl}\n<text text-anchor="middle" fill="${tc}" font-size="${fs}" font-weight="${fw}" font-family="sans-serif">${tspans}</text>`;
   }).join("\n");
 
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${nodeEls}\n</svg>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n${connDefs}\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${connEls}\n${nodeEls}\n</svg>`;
 }
 
-export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, initialAreas, onAreasChange, onNoteOpen, tagGroups = [], tagDefs = [], friendFields = [], onAddTagDef, onAddFriendField }: Props) {
+export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, initialAreas, onAreasChange, initialConnections, onConnectionsChange, onNoteOpen, tagGroups = [], tagDefs = [], friendFields = [], onAddTagDef, onAddFriendField }: Props) {
   const [nodes, setNodes] = useState<MindMapNode[]>(initialNodes);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -466,6 +477,11 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
 
   const [areas, setAreas] = useState<CanvasArea[]>(initialAreas ?? []);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
+  // ── ノード同士の関連線（connections） ──
+  const [connections, setConnections] = useState<Connection[]>(initialConnections ?? []);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  // 接続ドラッグ中（端点ハンドルから線を引いている最中）。x,y はキャンバス座標の終点。
+  const [connecting, setConnecting] = useState<{ from: string; x: number; y: number } | null>(null);
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
   const [editingAreaTitle, setEditingAreaTitle] = useState("");
   const [areaEditorStyle, setAreaEditorStyle] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
@@ -498,6 +514,13 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   const areaInputRef = useRef<HTMLInputElement>(null);
   areasRef.current = areas;
   onAreasChangeRef.current = onAreasChange;
+
+  const connectionsRef = useRef<Connection[]>(connections);
+  const onConnectionsChangeRef = useRef(onConnectionsChange);
+  const connectingRef = useRef(connecting);
+  connectionsRef.current = connections;
+  onConnectionsChangeRef.current = onConnectionsChange;
+  connectingRef.current = connecting;
 
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null;
 
@@ -532,14 +555,14 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   onStickyNotesChangeRef.current = onStickyNotesChange;
 
   // Undo / Redo（ノード＋付箋を一括管理）
-  type HistoryState = { nodes: MindMapNode[]; stickyNotes: StickyNote[]; areas: CanvasArea[] };
+  type HistoryState = { nodes: MindMapNode[]; stickyNotes: StickyNote[]; areas: CanvasArea[]; connections: Connection[] };
   const undoStack = useRef<HistoryState[]>([]);
   const redoStack = useRef<HistoryState[]>([]);
   // ローカル編集タイムスタンプ: Firestoreスナップショットによる上書きを防ぐ
   const localModifiedAt = useRef<number>(0);
 
   const pushUndo = useCallback(() => {
-    undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current], areas: [...areasRef.current] });
+    undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current], areas: [...areasRef.current], connections: [...connectionsRef.current] });
     if (undoStack.current.length > 50) undoStack.current.shift();
     redoStack.current = [];
   }, []);
@@ -561,6 +584,11 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     if (Date.now() - localModifiedAt.current < 2500) return;
     setAreas(initialAreas ?? []);
   }, [initialAreas]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => {
+    if (Date.now() - localModifiedAt.current < 2500) return;
+    setConnections(initialConnections ?? []);
+  }, [initialConnections]);
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -750,7 +778,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   const undo = useCallback(() => {
     if (undoStack.current.length === 0) return;
     const prev = undoStack.current.pop()!;
-    redoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current], areas: [...areasRef.current] });
+    redoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current], areas: [...areasRef.current], connections: [...connectionsRef.current] });
     localModifiedAt.current = Date.now();
     setNodes(prev.nodes);
     onNodesChangeRef.current(prev.nodes);
@@ -758,12 +786,14 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     onStickyNotesChangeRef.current?.(prev.stickyNotes);
     setAreas(prev.areas ?? areasRef.current);
     onAreasChangeRef.current?.(prev.areas ?? areasRef.current);
+    setConnections(prev.connections ?? connectionsRef.current);
+    onConnectionsChangeRef.current?.(prev.connections ?? connectionsRef.current);
   }, []);
 
   const redo = useCallback(() => {
     if (redoStack.current.length === 0) return;
     const next = redoStack.current.pop()!;
-    undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current], areas: [...areasRef.current] });
+    undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current], areas: [...areasRef.current], connections: [...connectionsRef.current] });
     localModifiedAt.current = Date.now();
     setNodes(next.nodes);
     onNodesChangeRef.current(next.nodes);
@@ -771,6 +801,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     onStickyNotesChangeRef.current?.(next.stickyNotes);
     setAreas(next.areas ?? areasRef.current);
     onAreasChangeRef.current?.(next.areas ?? areasRef.current);
+    setConnections(next.connections ?? connectionsRef.current);
+    onConnectionsChangeRef.current?.(next.connections ?? connectionsRef.current);
   }, []);
 
   const getVisibleNodes = useCallback((nodeList: MindMapNode[]) => nodeList, []);
@@ -850,8 +882,39 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       .filter(n => !toDelete.has(n.id))
       .map(n => (n.parentId && toDelete.has(n.parentId)) ? { ...n, parentId: resolveParent(n.parentId) } : n);
     updateNodes(next);
+    // 削除ノードに繋がっていた関連線も掃除する
+    const prunedConns = connectionsRef.current.filter(c => !toDelete.has(c.from) && !toDelete.has(c.to));
+    if (prunedConns.length !== connectionsRef.current.length) {
+      setConnections(prunedConns);
+      onConnectionsChangeRef.current?.(prunedConns);
+    }
     setSelectedIds(new Set());
   }, [nodes, updateNodes]);
+
+  // 関連線を1本つくる（端点ハンドルから別ノードへドロップしたとき）
+  const createConnection = useCallback((from: string, to: string) => {
+    if (!from || !to || from === to) return;
+    // 向きを問わず重複は作らない
+    const exists = connectionsRef.current.some(c => (c.from === from && c.to === to) || (c.from === to && c.to === from));
+    if (exists) return;
+    pushUndo();
+    localModifiedAt.current = Date.now();
+    const updated = [...connectionsRef.current, { id: `conn-${Date.now()}`, from, to }];
+    setConnections(updated);
+    onConnectionsChangeRef.current?.(updated);
+  }, [pushUndo]);
+
+  const deleteConnection = useCallback((id: string) => {
+    pushUndo();
+    localModifiedAt.current = Date.now();
+    const updated = connectionsRef.current.filter(c => c.id !== id);
+    setConnections(updated);
+    onConnectionsChangeRef.current?.(updated);
+    setSelectedConnectionId(null);
+  }, [pushUndo]);
+  // window レベルのハンドラから最新の createConnection を呼ぶための ref
+  const createConnectionRef = useRef(createConnection);
+  createConnectionRef.current = createConnection;
 
   const commitEdit = useCallback(() => {
     if (!editingId) return;
@@ -1170,12 +1233,12 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
 
   const exportSVG = useCallback(() => {
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([buildExportSVG(nodes, edgeStyle)], { type: "image/svg+xml" }));
+    a.href = URL.createObjectURL(new Blob([buildExportSVG(nodes, edgeStyle, connectionsRef.current)], { type: "image/svg+xml" }));
     a.download = "mindmap.svg"; a.click();
   }, [nodes, edgeStyle]);
 
   const exportPNG = useCallback(() => {
-    const s = buildExportSVG(nodes, edgeStyle);
+    const s = buildExportSVG(nodes, edgeStyle, connectionsRef.current);
     const pad = 60;
     const xs = nodes.map(n => [n.x - nodeWidth(n) / 2, n.x + nodeWidth(n) / 2]).flat();
     const ys = nodes.map(n => [n.y - nodeHeight(n) / 2, n.y + nodeHeight(n) / 2]).flat();
@@ -1272,6 +1335,11 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
         if (e.key === "Escape") setSelectedAreaId(null);
         return;
       }
+      if (selectedConnectionId) {
+        if (e.key === "Delete") deleteConnection(selectedConnectionId);
+        if (e.key === "Escape") setSelectedConnectionId(null);
+        return;
+      }
       if (selectedIds.size === 0) return;
       const id = [...selectedIds][0];
       if (e.key === "Tab") { e.preventDefault(); addChild(id); }
@@ -1288,7 +1356,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedIds, addChild, addSibling, deleteNodes, nodes, readOnly, undo, redo, selectedStickyId, editingStickyId, selectedAreaId]);
+  }, [selectedIds, addChild, addSibling, deleteNodes, nodes, readOnly, undo, redo, selectedStickyId, editingStickyId, selectedAreaId, selectedConnectionId, deleteConnection]);
 
   useEffect(() => {
     if (editingId && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
@@ -1353,6 +1421,12 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       if (ctxMenuDragRef.current) {
         const d = ctxMenuDragRef.current;
         setNodeCtxMenu(prev => prev ? { ...prev, sx: d.startSx + e.clientX - d.startMx, sy: d.startSy + e.clientY - d.startMy } : null);
+        return;
+      }
+      // 関連線つなぎ中：終点をマウスに追従
+      if (connectingRef.current) {
+        const cp = getCanvasPos(e.clientX, e.clientY);
+        setConnecting(prev => prev ? { ...prev, x: cp.x, y: cp.y } : null);
         return;
       }
       // エリアリサイズ
@@ -1490,6 +1564,19 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     };
     const onUp = (e: MouseEvent) => {
       if (ctxMenuDragRef.current) { ctxMenuDragRef.current = null; return; }
+      // 関連線つなぎの確定：マウス位置のノードへドロップで接続。空白なら取り消し。
+      if (connectingRef.current) {
+        const from = connectingRef.current.from;
+        const cp = getCanvasPos(e.clientX, e.clientY);
+        const target = nodesRef.current.find(n => {
+          if (n.id === from) return false;
+          const nw = nodeWidth(n), nh = nodeHeight(n);
+          return Math.abs(cp.x - n.x) <= nw / 2 && Math.abs(cp.y - n.y) <= nh / 2;
+        });
+        setConnecting(null);
+        if (target) createConnectionRef.current(from, target.id);
+        return;
+      }
       if (draggingStickyRef.current) {
         onStickyNotesChangeRef.current?.(stickyNotesRef.current);
         setDraggingSticky(null);
@@ -1642,6 +1729,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     setStickyCtxMenu(null);
     setAreaCtxMenu(null);
     setSelectedAreaId(null);
+    setSelectedConnectionId(null);
     if (insertMenu) { setInsertMenu(null); setInsertImageMode(false); return; }
     if (editingId) commitEdit();
     if (editingStickyId) commitStickyEdit();
@@ -1807,6 +1895,58 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
               </g>
             );
           })}
+          {/* 関連線（ノード同士を自由につなぐ線。親子ツリーとは別） */}
+          <defs>
+            <marker id="conn-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+            </marker>
+            <marker id="conn-arrow-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#6366f1" />
+            </marker>
+          </defs>
+          {connections.map(c => {
+            const a = nodes.find(n => n.id === c.from);
+            const b = nodes.find(n => n.id === c.to);
+            if (!a || !b || !visibleIds.has(a.id) || !visibleIds.has(b.id)) return null;
+            const { x1, y1, x2, y2, v } = calcEdgePoints(a, b);
+            const d = makeEdgePath(x1, y1, x2, y2, v, edgeStyle);
+            const sel = selectedConnectionId === c.id;
+            const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+            return (
+              <g key={c.id}>
+                {/* クリック判定用の太い透明線 */}
+                {!readOnly && (
+                  <path d={d} fill="none" stroke="transparent" strokeWidth={16}
+                    style={{ cursor: "pointer", pointerEvents: "stroke" }}
+                    onMouseDown={e => { e.stopPropagation(); setSelectedConnectionId(c.id); setSelectedIds(new Set()); setSelectedAreaId(null); }}
+                  />
+                )}
+                {/* 見える線（破線＋矢印） */}
+                <path d={d} fill="none"
+                  stroke={sel ? "#6366f1" : (c.color ?? "#64748b")}
+                  strokeWidth={sel ? 2.5 : 2} strokeDasharray="6 5" strokeOpacity={sel ? 1 : 0.8}
+                  markerEnd={`url(#${sel ? "conn-arrow-sel" : "conn-arrow"})`}
+                  style={{ pointerEvents: "none" }}
+                />
+                {/* 選択時：中点に削除ボタン */}
+                {sel && !readOnly && (
+                  <g style={{ cursor: "pointer", pointerEvents: "all" }}
+                    onMouseDown={e => { e.stopPropagation(); deleteConnection(c.id); }}>
+                    <circle cx={mx} cy={my} r={10} fill="white" stroke="#ef4444" strokeWidth={1.5} />
+                    <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize={12} fill="#ef4444" style={{ pointerEvents: "none" }}>✕</text>
+                  </g>
+                )}
+              </g>
+            );
+          })}
+          {/* つなぎ中の仮の線 */}
+          {connecting && (() => {
+            const a = nodes.find(n => n.id === connecting.from);
+            if (!a) return null;
+            return <path d={`M ${a.x},${a.y} L ${connecting.x},${connecting.y}`}
+              fill="none" stroke="#6366f1" strokeWidth={2} strokeDasharray="6 5" style={{ pointerEvents: "none" }} />;
+          })()}
+
           {visible.filter(n => n.parentId && visibleIds.has(n.parentId)).map(n => {
             const p = nodes.find(x => x.id === n.parentId)!;
             const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
@@ -2392,6 +2532,25 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                     </g>
                   );
                 })()}
+                {/* 関連線つなぎ用ハンドル（ホバー/選択時に四辺へ。ドラッグして相手ノードへ） */}
+                {!readOnly && !isEditing && !isNoteBodyEditing && (hoveredId === node.id || isSelected) && (
+                  [
+                    { hx: w / 2, hy: 0 }, { hx: -w / 2, hy: 0 },
+                    { hx: 0, hy: h / 2 }, { hx: 0, hy: -h / 2 },
+                  ].map(({ hx, hy }, i) => (
+                    <circle key={`conn-h-${i}`} cx={hx} cy={hy} r={5}
+                      fill="white" stroke="#14b8a6" strokeWidth={2}
+                      style={{ cursor: "crosshair", pointerEvents: "all" }}
+                      onMouseDown={e => {
+                        e.stopPropagation();
+                        setSelectedConnectionId(null);
+                        setConnecting({ from: node.id, x: node.x + hx, y: node.y + hy });
+                      }}
+                    >
+                      <title>ドラッグで他のノードと線でつなぐ</title>
+                    </circle>
+                  ))
+                )}
               </g>
             );
           })}

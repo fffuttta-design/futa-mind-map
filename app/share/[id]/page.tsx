@@ -45,7 +45,17 @@ export default function SharePage() {
         <Link href="/" className="text-xs text-indigo-500 hover:underline">FutaMindMapを使う</Link>
       </header>
       <div className="flex-1 overflow-hidden">
-        <MindMapCanvas initialNodes={map.nodes} onNodesChange={() => {}} readOnly />
+        <MindMapCanvas
+          initialNodes={map.nodes}
+          onNodesChange={() => {}}
+          initialStickyNotes={map.stickyNotes}
+          initialAreas={map.areas}
+          initialConnections={map.connections}
+          edgeStyle={map.edgeStyle}
+          defaultShape={map.defaultShape}
+          nodeBorderWidth={map.nodeBorderWidth}
+          readOnly
+        />
       </div>
     </div>
   );
