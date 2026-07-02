@@ -291,15 +291,22 @@ function renderMdHTML(lines: MdLine[]): React.ReactNode[] {
   });
 }
 
+// ノードの1行の高さ。文字サイズに追従（既定 13px のとき LINE_H=20 を維持）。
+function nodeLineH(node: MindMapNode): number {
+  return Math.max(LINE_H, Math.ceil((node.fontSize ?? 13) * 1.5));
+}
+
 function nodeWidth(node: MindMapNode): number {
   if (node.customWidth) return node.customWidth;
   if (node.noteContent !== undefined) return LIST_MIN_W;
   if (node.listItems) return LIST_MIN_W;
   if (node.imageWidth) return node.imageWidth;
+  const fs = node.fontSize ?? 13;
+  const k = fs / 13; // 文字サイズ倍率（既定 13px を基準に幅もスケール）
   const maxLineLen = Math.max(...node.text.split("\n").map(l => l.length), 1);
-  const base = Math.max(80, Math.min(220, maxLineLen * 8.5 + 48));
+  const base = Math.max(80, Math.min(220 * k, maxLineLen * 8.5 * k + 48));
   const cbPad = node.isCheckbox ? 44 : 0;
-  if (node.shape === "circle") return NODE_H * 2 + 8 + cbPad;
+  if (node.shape === "circle") { const cd = NODE_H * 2 + 8; return (fs > 13 ? Math.max(cd, base) : cd) + cbPad; }
   if (node.shape === "diamond") return base + 24 + cbPad;
   return base + cbPad;
 }
@@ -320,10 +327,13 @@ function nodeHeight(node: MindMapNode): number {
   }
   if (node.customHeight) return node.customHeight;
   if (node.imageHeight) return node.imageHeight;
-  if (node.shape === "circle") return NODE_H * 2 + 8;
-  if (node.shape === "diamond") return NODE_H + 16;
+  const fs = node.fontSize ?? 13;
+  const lineH = nodeLineH(node);
   const lines = node.text.split("\n").length;
-  return Math.max(NODE_H, lines * LINE_H + TEXT_PAD);
+  const base = Math.max(NODE_H, lines * lineH + TEXT_PAD);
+  if (node.shape === "circle") { const cd = NODE_H * 2 + 8; return fs > 13 ? Math.max(cd, base) : cd; }
+  if (node.shape === "diamond") { const dd = NODE_H + 16; return fs > 13 ? Math.max(dd, base) : dd; }
+  return base;
 }
 
 /** ④ 親子の相対位置から接続点と方向を計算 */
@@ -438,10 +448,11 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
       default: shapeEl = `<rect x="${node.x - w / 2}" y="${node.y - h / 2}" width="${w}" height="${h}" rx="${h / 2}" fill="${node.color}"/>`;
     }
     const textLines = node.text.split("\n");
-    const startY = node.y - (textLines.length - 1) * LINE_H / 2;
+    const lh = nodeLineH(node);
+    const startY = node.y - (textLines.length - 1) * lh / 2;
     const tspans = textLines.map((line, i) => {
       const display = line.length > 20 ? line.slice(0, 20) + "…" : line;
-      return `<tspan x="${tx}" y="${startY + i * LINE_H}" dominant-baseline="middle">${display}</tspan>`;
+      return `<tspan x="${tx}" y="${startY + i * lh}" dominant-baseline="middle">${display}</tspan>`;
     }).join("");
     return `${shapeEl}\n${iconEl}\n<text text-anchor="middle" fill="${tc}" font-size="${fs}" font-weight="${fw}" font-family="sans-serif">${tspans}</text>`;
   }).join("\n");
@@ -481,7 +492,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     startW: number; startH: number; startNx: number; startNy: number;
     isImage: boolean;
   } | null>(null);
-  const [editorStyle, setEditorStyle] = useState<{ left: number; top: number; width: number; height: number; fontSize: number } | null>(null);
+  const [editorStyle, setEditorStyle] = useState<{ left: number; top: number; width: number; height: number; fontSize: number; lineHeight: number } | null>(null);
   const [nodeCtxMenu, setNodeCtxMenu] = useState<{ nodeId: string; sx: number; sy: number } | null>(null);
   // ノード右クリックメニューのサブメニュー（null=トップ階層 / 各カテゴリの詳細設定）
   // ノード右クリックメニュー：ホバーしたカテゴリの詳細を右へフライアウト表示（cat と縦位置）
@@ -671,11 +682,12 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       if (node.listItems || node.noteContent !== undefined) {
         // リスト/ノートはヘッダー部分のみ編集
         const nodeTop = sy - (nodeHeight(node) / 2) * zoom;
-        setEditorStyle({ left: sx - w / 2 + 30 * zoom, top: nodeTop, width: w * 0.65, height: LIST_HEADER_H * zoom, fontSize: 13 * zoom });
+        setEditorStyle({ left: sx - w / 2 + 30 * zoom, top: nodeTop, width: w * 0.65, height: LIST_HEADER_H * zoom, fontSize: 13 * zoom, lineHeight: LINE_H * zoom });
       } else {
         const lineCount = Math.max(1, editText.split("\n").length);
-        const h = Math.max(NODE_H, lineCount * LINE_H + TEXT_PAD) * zoom;
-        setEditorStyle({ left: sx - w / 2, top: sy - h / 2, width: w, height: h, fontSize: (node.fontSize ?? 13) * zoom });
+        const lh = nodeLineH(node);
+        const h = Math.max(NODE_H, lineCount * lh + TEXT_PAD) * zoom;
+        setEditorStyle({ left: sx - w / 2, top: sy - h / 2, width: w, height: h, fontSize: (node.fontSize ?? 13) * zoom, lineHeight: lh * zoom });
       }
     } else {
       setEditorStyle(null);
@@ -2561,10 +2573,11 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                         style={{ pointerEvents: "none" }}
                       >
                         {textLines.map((line, i) => {
-                          const totalH = (textLines.length - 1) * LINE_H;
+                          const lh = nodeLineH(node);
+                          const totalH = (textLines.length - 1) * lh;
                           const display = line.length > 20 ? line.slice(0, 20) + "…" : line;
                           return (
-                            <tspan key={i} x={node.icon ? 8 : 0} dy={i === 0 ? -totalH / 2 : LINE_H}>
+                            <tspan key={i} x={node.icon ? 8 : 0} dy={i === 0 ? -totalH / 2 : lh}>
                               {display}
                             </tspan>
                           );
@@ -2875,7 +2888,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
             color: editorTextColor,
             resize: "none",
             overflow: "hidden",
-            lineHeight: `${LINE_H * zoom}px`,
+            lineHeight: `${editorStyle.lineHeight}px`,
             paddingTop: TEXT_PAD / 2 * zoom,
             paddingBottom: TEXT_PAD / 2 * zoom,
           }}
