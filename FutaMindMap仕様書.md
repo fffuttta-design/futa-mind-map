@@ -3,7 +3,7 @@
 > このドキュメントは **FutaMindMap（ふたマインドマップ）** の全機能・構成・データ構造を網羅した仕様書です。
 > 開発・改修の前に必ず読み込み、機能を変更したら **この仕様書も併せて更新** すること（詳細は `CLAUDE.md`）。
 >
-> - 最終更新基準: アプリ v1.13.0 / デスクトップ v1.3.0（NSIS + electron-updater へ移行）
+> - 最終更新基準: アプリ v1.14.0（線ラベル機能を追加）/ デスクトップ v1.3.0（NSIS + electron-updater へ移行）
 > - リポジトリ: `https://github.com/fffuttta-design/futa-mind-map`（ブランチ `main`）
 > - 本番URL（Web）: `https://futa-mind-map.vercel.app`
 
@@ -162,6 +162,7 @@ futa-mind-map/
 - **優先度（priority）**: 数字バッジ（赤）で重要度を表示。右クリックメニューで増減。
 - **折りたたみ（collapsed）**: 子ノードの表示/非表示。
 - **接続線（エッジ）**: 親子を曲線（curve）または直線（straight）で結ぶ（ページ設定で切替）。枠線太さもページ設定で 0/1/2/3px。
+- **線ラベル（edgeLabel）**: 親子エッジの**線をダブルクリック**すると中央にラベル文字を入力できる（例「〜だから」「原因」「含む」等の関係語）。白背景の小さなタグとして線の中点に表示。空文字で確定すると削除。子ノードの `edgeLabel` に保存し、Undo/Redo・SVG/PNG エクスポート・公開ページにも反映。
 
 ### 5-2. 特殊ノード
 - **リストノード（listItems）**: ノードを「リスト」に変換。タイプは `checkbox`（チェックリスト）/ `numbered`（番号）/ `bullet`（箇条書き）。ネスト（子アイテム）対応、チェック・並び、項目追加・削除、折りたたみ可。
@@ -176,7 +177,8 @@ futa-mind-map/
 - **作成**: ノードにホバー（または選択）すると四辺に **接続ハンドル（teal の ◦）** が出る。そこから**ドラッグして相手ノードの上で離す**と接続。空白で離すとキャンセル。
 - **見た目**: 通常のエッジと同じ**実線・つなぎ元ノードの色・薄め**（`edgeStyle` 追従）。選択時のみ青くハイライト。
 - **削除**: 線をクリックで選択（青くハイライト）→ 中点の **✕** をクリック、または Delete キー。
-- **データ**: `MindMap.connections: Connection[]`（`{ id, from, to, color? }`）。ノード削除時は両端を参照する線も自動で掃除。Undo/Redo・SVG/PNG エクスポート・公開ページにも反映。
+- **線ラベル（label）**: 関連線を**ダブルクリック**すると中央にラベル文字を入力できる（親子エッジと同じ仕様）。ラベルがある時は ✕ ボタンはラベルの右隣にずれる。空文字で確定すると削除。
+- **データ**: `MindMap.connections: Connection[]`（`{ id, from, to, color?, label? }`）。ノード削除時は両端を参照する線も自動で掃除。Undo/Redo・SVG/PNG エクスポート・公開ページにも反映。
 
 ### 5-4. エリア（CanvasArea）
 - ノードをグルーピングする矩形領域。タイトル・色付き。移動するとエリア内ノードも連動。リサイズ可。
@@ -313,6 +315,7 @@ interface MindMapNode {
   listType?: "checkbox" | "numbered" | "bullet";
   tagIds?: string[];               // 付与タグ（TagDef.id 参照）
   friendFieldIds?: string[];       // 付与友だち情報項目（FriendFieldDef.id 参照）
+  edgeLabel?: string;              // 親ノードへの接続線の中央に表示するラベル文字
 }
 ```
 
@@ -321,7 +324,7 @@ interface MindMapNode {
 - `TagGroup { id, name }` / `TagDef { id, name, color, groupId|null }` / `FriendFieldDef { id, name }`
 - `LineMessageData`（type=text/button/carousel）/ `LineButton` / `LineCarouselCard`
 - `CanvasArea { id, x, y, width, height, title, color }`
-- `Connection { id, from, to, color? }` … ノード同士の関連線（from/to はノード id）
+- `Connection { id, from, to, color?, label? }` … ノード同士の関連線（from/to はノード id、label は線中央のラベル文字）
 - `StickyNote { id, x, y, text, color, width, height }`
 - `HistoryEntry { id, nodes, savedAt, name? }`
 

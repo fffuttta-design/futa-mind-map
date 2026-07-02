@@ -343,6 +343,13 @@ function calcEdgePoints(parent: MindMapNode, child: MindMapNode) {
   }
 }
 
+// 線ラベルの表示幅をざっくり見積もる（全角=12px / 半角=7px、fontSize 12 前提）。
+function measureEdgeLabelWidth(text: string): number {
+  let w = 0;
+  for (const ch of text) w += ch.charCodeAt(0) > 0x2e7f ? 12 : 7;
+  return w + 14; // 左右パディング
+}
+
 function makeEdgePath(x1: number, y1: number, x2: number, y2: number, v: boolean, style: "curve" | "straight" = "curve"): string {
   if (style === "straight") return `M ${x1},${y1} L ${x2},${y2}`;
   if (v) {
@@ -373,6 +380,20 @@ function NodeShape({ node, w, h, isSelected, borderWidth = 0 }: { node: MindMapN
   }
 }
 
+// 線（親子エッジ／関連線）の中央に載せるラベル。ダブルクリックで編集を開始する。
+function EdgeLabel({ mx, my, text, onEdit, readOnly }: { mx: number; my: number; text: string; onEdit?: () => void; readOnly?: boolean }) {
+  const w = measureEdgeLabelWidth(text);
+  return (
+    <g
+      onDoubleClick={onEdit ? (e => { e.stopPropagation(); if (!readOnly) onEdit(); }) : undefined}
+      style={{ cursor: readOnly ? "default" : "pointer", pointerEvents: "all" }}
+    >
+      <rect x={mx - w / 2} y={my - 10} width={w} height={20} rx={6} fill="#ffffff" fillOpacity={0.95} stroke="#e2e8f0" strokeWidth={1} />
+      <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize={12} fill="#475569" style={{ pointerEvents: "none", userSelect: "none" }}>{text}</text>
+    </g>
+  );
+}
+
 function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = "curve", connections: Connection[] = []): string {
   const pad = 60;
   const xs = nodes.map(n => [n.x - nodeWidth(n) / 2, n.x + nodeWidth(n) / 2]).flat();
@@ -381,10 +402,18 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
   const W = Math.max(...xs) + pad - minX, H = Math.max(...ys) + pad - minY;
   const vids = new Set(nodes.map(n => n.id));
 
+  // 線の中央ラベル（白背景＋文字）を SVG 文字列で組む。
+  const labelSVG = (x1: number, y1: number, x2: number, y2: number, label?: string) => {
+    if (!label) return "";
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, w = measureEdgeLabelWidth(label);
+    const esc = label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return `<rect x="${mx - w / 2}" y="${my - 10}" width="${w}" height="20" rx="6" fill="#ffffff" fill-opacity="0.95" stroke="#e2e8f0" stroke-width="1"/><text x="${mx}" y="${my}" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#475569">${esc}</text>`;
+  };
+
   const edges = nodes.filter(n => n.parentId && vids.has(n.parentId)).map(n => {
     const p = nodes.find(x => x.id === n.parentId)!;
     const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
-    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>`;
+    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>${labelSVG(x1, y1, x2, y2, n.edgeLabel)}`;
   }).join("\n");
 
   // 関連線（通常のエッジと同じ：実線・つなぎ元ノードの色・薄め）
@@ -392,7 +421,7 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
     const a = nodes.find(n => n.id === c.from), b = nodes.find(n => n.id === c.to);
     if (!a || !b || !vids.has(a.id) || !vids.has(b.id)) return "";
     const { x1, y1, x2, y2, v } = calcEdgePoints(a, b);
-    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${c.color ?? a.color}" stroke-width="2" stroke-opacity="0.45"/>`;
+    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${c.color ?? a.color}" stroke-width="2" stroke-opacity="0.45"/>${labelSVG(x1, y1, x2, y2, c.label)}`;
   }).join("\n");
 
   const nodeEls = nodes.map(node => {
@@ -424,6 +453,11 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  // 線ラベル編集: kind="edge"→子ノードid / kind="conn"→関連線id
+  const [editingEdgeLabel, setEditingEdgeLabel] = useState<{ kind: "edge" | "conn"; id: string } | null>(null);
+  const [edgeLabelText, setEdgeLabelText] = useState("");
+  const [edgeLabelStyle, setEdgeLabelStyle] = useState<{ left: number; top: number; width: number } | null>(null);
+  const edgeLabelInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState<{
     primaryId: string;
     startCx: number; startCy: number;
@@ -925,6 +959,75 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   // window レベルのハンドラから最新の createConnection を呼ぶための ref
   const createConnectionRef = useRef(createConnection);
   createConnectionRef.current = createConnection;
+
+  // ── 線ラベル（親子エッジ／関連線の中央文字）──────────────
+  // 対象の線の中点（キャンバス座標）を返す。編集オーバーレイの位置決めに使う。
+  const edgeLabelMidpoint = useCallback((kind: "edge" | "conn", id: string): { mx: number; my: number } | null => {
+    if (kind === "edge") {
+      const child = nodesRef.current.find(n => n.id === id);
+      if (!child || !child.parentId) return null;
+      const parent = nodesRef.current.find(n => n.id === child.parentId);
+      if (!parent) return null;
+      const { x1, y1, x2, y2 } = calcEdgePoints(parent, child);
+      return { mx: (x1 + x2) / 2, my: (y1 + y2) / 2 };
+    }
+    const c = connectionsRef.current.find(cc => cc.id === id);
+    if (!c) return null;
+    const a = nodesRef.current.find(n => n.id === c.from);
+    const b = nodesRef.current.find(n => n.id === c.to);
+    if (!a || !b) return null;
+    const { x1, y1, x2, y2 } = calcEdgePoints(a, b);
+    return { mx: (x1 + x2) / 2, my: (y1 + y2) / 2 };
+  }, []);
+
+  // 線ラベルの編集を開始（既存文字を初期値に）
+  const startEditEdgeLabel = useCallback((kind: "edge" | "conn", id: string) => {
+    if (readOnly) return;
+    const cur = kind === "edge"
+      ? (nodesRef.current.find(n => n.id === id)?.edgeLabel ?? "")
+      : (connectionsRef.current.find(c => c.id === id)?.label ?? "");
+    setEditingEdgeLabel({ kind, id });
+    setEdgeLabelText(cur);
+  }, [readOnly]);
+
+  // 線ラベルの編集を確定（空文字なら削除）
+  const commitEdgeLabel = useCallback(() => {
+    setEditingEdgeLabel(prev => {
+      if (!prev) return null;
+      const t = edgeLabelText.trim();
+      if (prev.kind === "edge") {
+        updateNodes(nodesRef.current.map(n => n.id === prev.id ? { ...n, edgeLabel: t || undefined } : n));
+      } else {
+        pushUndo();
+        localModifiedAt.current = Date.now();
+        const updated = connectionsRef.current.map(c => c.id === prev.id ? { ...c, label: t || undefined } : c);
+        setConnections(updated);
+        onConnectionsChangeRef.current?.(updated);
+      }
+      return null;
+    });
+  }, [edgeLabelText, updateNodes, pushUndo]);
+
+  // 線ラベル編集オーバーレイ（HTML input）の位置を線の中点に合わせる
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !editingEdgeLabel) { setEdgeLabelStyle(null); return; }
+    const mid = edgeLabelMidpoint(editingEdgeLabel.kind, editingEdgeLabel.id);
+    if (!mid) { setEdgeLabelStyle(null); return; }
+    const r = svg.getBoundingClientRect();
+    const sx = r.width / 2 + pan.x + mid.mx * zoom;
+    const sy = r.height / 2 + pan.y + mid.my * zoom;
+    const w = 140 * zoom;
+    setEdgeLabelStyle({ left: sx - w / 2, top: sy - 12 * zoom, width: w });
+  }, [editingEdgeLabel, nodes, connections, pan, zoom, edgeLabelMidpoint]);
+
+  // 線ラベル編集開始時にフォーカス＆全選択
+  useEffect(() => {
+    if (editingEdgeLabel && edgeLabelInputRef.current) {
+      edgeLabelInputRef.current.focus();
+      edgeLabelInputRef.current.select();
+    }
+  }, [editingEdgeLabel]);
 
   const commitEdit = useCallback(() => {
     if (!editingId) return;
@@ -1951,13 +2054,17 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
             const d = makeEdgePath(x1, y1, x2, y2, v, edgeStyle);
             const sel = selectedConnectionId === c.id;
             const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+            const editingThis = editingEdgeLabel?.kind === "conn" && editingEdgeLabel.id === c.id;
+            // ラベルがあるときは削除ボタンをラベルの右隣にずらして重なりを防ぐ
+            const delX = c.label ? mx + measureEdgeLabelWidth(c.label) / 2 + 14 : mx;
             return (
               <g key={c.id}>
-                {/* クリック判定用の太い透明線 */}
+                {/* クリック判定用の太い透明線（ダブルクリックでラベル編集） */}
                 {!readOnly && (
                   <path d={d} fill="none" stroke="transparent" strokeWidth={16}
                     style={{ cursor: "pointer", pointerEvents: "stroke" }}
                     onMouseDown={e => { e.stopPropagation(); setSelectedConnectionId(c.id); setSelectedIds(new Set()); setSelectedAreaId(null); }}
+                    onDoubleClick={e => { e.stopPropagation(); startEditEdgeLabel("conn", c.id); }}
                   />
                 )}
                 {/* 見える線（通常のエッジと同じ：実線・つなぎ元ノードの色・薄め） */}
@@ -1966,12 +2073,17 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                   strokeWidth={sel ? 2.5 : 2} strokeOpacity={sel ? 1 : 0.45}
                   style={{ pointerEvents: "none" }}
                 />
-                {/* 選択時：中点に削除ボタン */}
+                {/* 中央ラベル（編集中は非表示にしてオーバーレイに任せる） */}
+                {c.label && !editingThis && (
+                  <EdgeLabel mx={mx} my={my} text={c.label} readOnly={readOnly}
+                    onEdit={() => startEditEdgeLabel("conn", c.id)} />
+                )}
+                {/* 選択時：削除ボタン */}
                 {sel && !readOnly && (
                   <g style={{ cursor: "pointer", pointerEvents: "all" }}
                     onMouseDown={e => { e.stopPropagation(); deleteConnection(c.id); }}>
-                    <circle cx={mx} cy={my} r={10} fill="white" stroke="#ef4444" strokeWidth={1.5} />
-                    <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize={12} fill="#ef4444" style={{ pointerEvents: "none" }}>✕</text>
+                    <circle cx={delX} cy={my} r={10} fill="white" stroke="#ef4444" strokeWidth={1.5} />
+                    <text x={delX} y={my} textAnchor="middle" dominantBaseline="central" fontSize={12} fill="#ef4444" style={{ pointerEvents: "none" }}>✕</text>
                   </g>
                 )}
               </g>
@@ -1988,11 +2100,26 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
           {visible.filter(n => n.parentId && visibleIds.has(n.parentId)).map(n => {
             const p = nodes.find(x => x.id === n.parentId)!;
             const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
+            const d = makeEdgePath(x1, y1, x2, y2, v, edgeStyle);
+            const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+            const editingThis = editingEdgeLabel?.kind === "edge" && editingEdgeLabel.id === n.id;
             return (
-              <path key={`e-${n.id}`}
-                d={makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}
-                fill="none" stroke={n.color} strokeWidth={2} strokeOpacity={0.45}
-              />
+              <g key={`e-${n.id}`}>
+                {/* ダブルクリックでラベル編集。単クリックは背景と同じ挙動へ委譲しパンを妨げない */}
+                {!readOnly && (
+                  <path d={d} fill="none" stroke="transparent" strokeWidth={16}
+                    style={{ cursor: "pointer", pointerEvents: "stroke" }}
+                    onMouseDown={onBgMouseDown}
+                    onDoubleClick={e => { e.stopPropagation(); startEditEdgeLabel("edge", n.id); }}
+                  />
+                )}
+                <path d={d} fill="none" stroke={n.color} strokeWidth={2} strokeOpacity={0.45}
+                  style={{ pointerEvents: "none" }} />
+                {n.edgeLabel && !editingThis && (
+                  <EdgeLabel mx={mx} my={my} text={n.edgeLabel} readOnly={readOnly}
+                    onEdit={() => startEditEdgeLabel("edge", n.id)} />
+                )}
+              </g>
             );
           })}
 
@@ -2746,6 +2873,41 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
             paddingBottom: TEXT_PAD / 2 * zoom,
           }}
           className="text-center font-medium bg-transparent border-none outline-none px-2"
+        />
+      )}
+
+      {/* 線ラベル インライン編集（親子エッジ／関連線の中央文字） */}
+      {!readOnly && editingEdgeLabel && edgeLabelStyle && (
+        <input
+          ref={edgeLabelInputRef}
+          type="text"
+          value={edgeLabelText}
+          onChange={e => setEdgeLabelText(e.target.value)}
+          onBlur={commitEdgeLabel}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === "Enter") { e.preventDefault(); commitEdgeLabel(); }
+            if (e.key === "Escape") { setEditingEdgeLabel(null); }
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          placeholder="線の文字…"
+          style={{
+            position: "absolute",
+            left: edgeLabelStyle.left,
+            top: edgeLabelStyle.top,
+            width: edgeLabelStyle.width,
+            height: 24 * zoom,
+            fontSize: 12 * zoom,
+            textAlign: "center",
+            lineHeight: 1.4,
+            padding: `0 ${6 * zoom}px`,
+            background: "#ffffff",
+            border: "1px solid #6366f1",
+            borderRadius: 6,
+            outline: "none",
+            color: "#334155",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.12)",
+          }}
         />
       )}
 

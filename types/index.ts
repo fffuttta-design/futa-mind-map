@@ -37,6 +37,8 @@ export interface MindMapNode {
   // タグ・友だち情報（Lステップ風）: マスタの id を参照
   tagIds?: string[];
   friendFieldIds?: string[];
+  // 親ノードへの接続線（親子エッジ）の中央に表示するラベル文字
+  edgeLabel?: string;
 }
 
 // ── タグ・友だち情報マスタ（マップ単位で共通） ──────────────
@@ -98,6 +100,7 @@ export interface Connection {
   from: string;   // 始点ノード id
   to: string;     // 終点ノード id
   color?: string; // 線の色（省略時はデフォルトのグレー）
+  label?: string; // 線の中央に表示するラベル文字（省略時は無し）
 }
 
 export interface StickyNote {
