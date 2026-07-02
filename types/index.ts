@@ -39,6 +39,7 @@ export interface MindMapNode {
   friendFieldIds?: string[];
   // 親ノードへの接続線（親子エッジ）の中央に表示するラベル文字
   edgeLabel?: string;
+  edgeLabelFontSize?: number; // ラベル文字の大きさ（省略時 12）
 }
 
 // ── タグ・友だち情報マスタ（マップ単位で共通） ──────────────
@@ -101,6 +102,7 @@ export interface Connection {
   to: string;     // 終点ノード id
   color?: string; // 線の色（省略時はデフォルトのグレー）
   label?: string; // 線の中央に表示するラベル文字（省略時は無し）
+  labelFontSize?: number; // ラベル文字の大きさ（省略時 12）
 }
 
 export interface StickyNote {

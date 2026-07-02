@@ -343,11 +343,11 @@ function calcEdgePoints(parent: MindMapNode, child: MindMapNode) {
   }
 }
 
-// 線ラベルの表示幅をざっくり見積もる（全角=12px / 半角=7px、fontSize 12 前提）。
-function measureEdgeLabelWidth(text: string): number {
+// 線ラベルの表示幅をざっくり見積もる（全角=1em / 半角=0.58em、既定 fontSize=12）。
+function measureEdgeLabelWidth(text: string, fontSize = 12): number {
   let w = 0;
-  for (const ch of text) w += ch.charCodeAt(0) > 0x2e7f ? 12 : 7;
-  return w + 14; // 左右パディング
+  for (const ch of text) w += (ch.charCodeAt(0) > 0x2e7f ? 1 : 0.58) * fontSize;
+  return w + fontSize + 2; // 左右パディング
 }
 
 function makeEdgePath(x1: number, y1: number, x2: number, y2: number, v: boolean, style: "curve" | "straight" = "curve"): string {
@@ -381,15 +381,16 @@ function NodeShape({ node, w, h, isSelected, borderWidth = 0 }: { node: MindMapN
 }
 
 // 線（親子エッジ／関連線）の中央に載せるラベル。ダブルクリックで編集を開始する。
-function EdgeLabel({ mx, my, text, onEdit, readOnly }: { mx: number; my: number; text: string; onEdit?: () => void; readOnly?: boolean }) {
-  const w = measureEdgeLabelWidth(text);
+function EdgeLabel({ mx, my, text, fontSize = 12, onEdit, readOnly }: { mx: number; my: number; text: string; fontSize?: number; onEdit?: () => void; readOnly?: boolean }) {
+  const w = measureEdgeLabelWidth(text, fontSize);
+  const h = fontSize + 8;
   return (
     <g
       onDoubleClick={onEdit ? (e => { e.stopPropagation(); if (!readOnly) onEdit(); }) : undefined}
       style={{ cursor: readOnly ? "default" : "pointer", pointerEvents: "all" }}
     >
-      <rect x={mx - w / 2} y={my - 10} width={w} height={20} rx={6} fill="#ffffff" fillOpacity={0.95} stroke="#e2e8f0" strokeWidth={1} />
-      <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize={12} fill="#475569" style={{ pointerEvents: "none", userSelect: "none" }}>{text}</text>
+      <rect x={mx - w / 2} y={my - h / 2} width={w} height={h} rx={6} fill="#ffffff" fillOpacity={0.95} stroke="#e2e8f0" strokeWidth={1} />
+      <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fill="#475569" style={{ pointerEvents: "none", userSelect: "none" }}>{text}</text>
     </g>
   );
 }
@@ -403,17 +404,17 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
   const vids = new Set(nodes.map(n => n.id));
 
   // 線の中央ラベル（白背景＋文字）を SVG 文字列で組む。
-  const labelSVG = (x1: number, y1: number, x2: number, y2: number, label?: string) => {
+  const labelSVG = (x1: number, y1: number, x2: number, y2: number, label?: string, fontSize = 12) => {
     if (!label) return "";
-    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, w = measureEdgeLabelWidth(label);
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, w = measureEdgeLabelWidth(label, fontSize), h = fontSize + 8;
     const esc = label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    return `<rect x="${mx - w / 2}" y="${my - 10}" width="${w}" height="20" rx="6" fill="#ffffff" fill-opacity="0.95" stroke="#e2e8f0" stroke-width="1"/><text x="${mx}" y="${my}" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#475569">${esc}</text>`;
+    return `<rect x="${mx - w / 2}" y="${my - h / 2}" width="${w}" height="${h}" rx="6" fill="#ffffff" fill-opacity="0.95" stroke="#e2e8f0" stroke-width="1"/><text x="${mx}" y="${my}" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" fill="#475569">${esc}</text>`;
   };
 
   const edges = nodes.filter(n => n.parentId && vids.has(n.parentId)).map(n => {
     const p = nodes.find(x => x.id === n.parentId)!;
     const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
-    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>${labelSVG(x1, y1, x2, y2, n.edgeLabel)}`;
+    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>${labelSVG(x1, y1, x2, y2, n.edgeLabel, n.edgeLabelFontSize)}`;
   }).join("\n");
 
   // 関連線（通常のエッジと同じ：実線・つなぎ元ノードの色・薄め）
@@ -421,7 +422,7 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
     const a = nodes.find(n => n.id === c.from), b = nodes.find(n => n.id === c.to);
     if (!a || !b || !vids.has(a.id) || !vids.has(b.id)) return "";
     const { x1, y1, x2, y2, v } = calcEdgePoints(a, b);
-    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${c.color ?? a.color}" stroke-width="2" stroke-opacity="0.45"/>${labelSVG(x1, y1, x2, y2, c.label)}`;
+    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${c.color ?? a.color}" stroke-width="2" stroke-opacity="0.45"/>${labelSVG(x1, y1, x2, y2, c.label, c.labelFontSize)}`;
   }).join("\n");
 
   const nodeEls = nodes.map(node => {
@@ -456,6 +457,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   // 線ラベル編集: kind="edge"→子ノードid / kind="conn"→関連線id
   const [editingEdgeLabel, setEditingEdgeLabel] = useState<{ kind: "edge" | "conn"; id: string } | null>(null);
   const [edgeLabelText, setEdgeLabelText] = useState("");
+  const [edgeLabelSize, setEdgeLabelSize] = useState(12);
   const [edgeLabelStyle, setEdgeLabelStyle] = useState<{ left: number; top: number; width: number } | null>(null);
   const edgeLabelInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState<{
@@ -980,14 +982,14 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     return { mx: (x1 + x2) / 2, my: (y1 + y2) / 2 };
   }, []);
 
-  // 線ラベルの編集を開始（既存文字を初期値に）
+  // 線ラベルの編集を開始（既存の文字・大きさを初期値に）
   const startEditEdgeLabel = useCallback((kind: "edge" | "conn", id: string) => {
     if (readOnly) return;
-    const cur = kind === "edge"
-      ? (nodesRef.current.find(n => n.id === id)?.edgeLabel ?? "")
-      : (connectionsRef.current.find(c => c.id === id)?.label ?? "");
+    const node = kind === "edge" ? nodesRef.current.find(n => n.id === id) : undefined;
+    const conn = kind === "conn" ? connectionsRef.current.find(c => c.id === id) : undefined;
     setEditingEdgeLabel({ kind, id });
-    setEdgeLabelText(cur);
+    setEdgeLabelText(kind === "edge" ? (node?.edgeLabel ?? "") : (conn?.label ?? ""));
+    setEdgeLabelSize(kind === "edge" ? (node?.edgeLabelFontSize ?? 12) : (conn?.labelFontSize ?? 12));
   }, [readOnly]);
 
   // 線ラベルの編集を確定（空文字なら削除）
@@ -995,18 +997,23 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     setEditingEdgeLabel(prev => {
       if (!prev) return null;
       const t = edgeLabelText.trim();
+      const size = edgeLabelSize;
       if (prev.kind === "edge") {
-        updateNodes(nodesRef.current.map(n => n.id === prev.id ? { ...n, edgeLabel: t || undefined } : n));
+        updateNodes(nodesRef.current.map(n => n.id === prev.id
+          ? { ...n, edgeLabel: t || undefined, edgeLabelFontSize: t ? size : undefined }
+          : n));
       } else {
         pushUndo();
         localModifiedAt.current = Date.now();
-        const updated = connectionsRef.current.map(c => c.id === prev.id ? { ...c, label: t || undefined } : c);
+        const updated = connectionsRef.current.map(c => c.id === prev.id
+          ? { ...c, label: t || undefined, labelFontSize: t ? size : undefined }
+          : c);
         setConnections(updated);
         onConnectionsChangeRef.current?.(updated);
       }
       return null;
     });
-  }, [edgeLabelText, updateNodes, pushUndo]);
+  }, [edgeLabelText, edgeLabelSize, updateNodes, pushUndo]);
 
   // 線ラベル編集オーバーレイ（HTML input）の位置を線の中点に合わせる
   useEffect(() => {
@@ -1017,8 +1024,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     const r = svg.getBoundingClientRect();
     const sx = r.width / 2 + pan.x + mid.mx * zoom;
     const sy = r.height / 2 + pan.y + mid.my * zoom;
-    const w = 140 * zoom;
-    setEdgeLabelStyle({ left: sx - w / 2, top: sy - 12 * zoom, width: w });
+    // 中点を中心に置く（オーバーレイ側で translate(-50%,-50%)）
+    setEdgeLabelStyle({ left: sx, top: sy, width: 0 });
   }, [editingEdgeLabel, nodes, connections, pan, zoom, edgeLabelMidpoint]);
 
   // 線ラベル編集開始時にフォーカス＆全選択
@@ -2056,7 +2063,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
             const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
             const editingThis = editingEdgeLabel?.kind === "conn" && editingEdgeLabel.id === c.id;
             // ラベルがあるときは削除ボタンをラベルの右隣にずらして重なりを防ぐ
-            const delX = c.label ? mx + measureEdgeLabelWidth(c.label) / 2 + 14 : mx;
+            const delX = c.label ? mx + measureEdgeLabelWidth(c.label, c.labelFontSize) / 2 + 14 : mx;
             return (
               <g key={c.id}>
                 {/* クリック判定用の太い透明線（ダブルクリックでラベル編集） */}
@@ -2075,7 +2082,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                 />
                 {/* 中央ラベル（編集中は非表示にしてオーバーレイに任せる） */}
                 {c.label && !editingThis && (
-                  <EdgeLabel mx={mx} my={my} text={c.label} readOnly={readOnly}
+                  <EdgeLabel mx={mx} my={my} text={c.label} fontSize={c.labelFontSize} readOnly={readOnly}
                     onEdit={() => startEditEdgeLabel("conn", c.id)} />
                 )}
                 {/* 選択時：削除ボタン */}
@@ -2116,7 +2123,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                 <path d={d} fill="none" stroke={n.color} strokeWidth={2} strokeOpacity={0.45}
                   style={{ pointerEvents: "none" }} />
                 {n.edgeLabel && !editingThis && (
-                  <EdgeLabel mx={mx} my={my} text={n.edgeLabel} readOnly={readOnly}
+                  <EdgeLabel mx={mx} my={my} text={n.edgeLabel} fontSize={n.edgeLabelFontSize} readOnly={readOnly}
                     onEdit={() => startEditEdgeLabel("edge", n.id)} />
                 )}
               </g>
@@ -2876,39 +2883,64 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
         />
       )}
 
-      {/* 線ラベル インライン編集（親子エッジ／関連線の中央文字） */}
+      {/* 線ラベル インライン編集（親子エッジ／関連線の中央文字・大きさ変更付き） */}
       {!readOnly && editingEdgeLabel && edgeLabelStyle && (
-        <input
-          ref={edgeLabelInputRef}
-          type="text"
-          value={edgeLabelText}
-          onChange={e => setEdgeLabelText(e.target.value)}
-          onBlur={commitEdgeLabel}
-          onKeyDown={e => {
-            e.stopPropagation();
-            if (e.key === "Enter") { e.preventDefault(); commitEdgeLabel(); }
-            if (e.key === "Escape") { setEditingEdgeLabel(null); }
-          }}
+        <div
           onMouseDown={e => e.stopPropagation()}
-          placeholder="線の文字…"
           style={{
             position: "absolute",
             left: edgeLabelStyle.left,
             top: edgeLabelStyle.top,
-            width: edgeLabelStyle.width,
-            height: 24 * zoom,
-            fontSize: 12 * zoom,
-            textAlign: "center",
-            lineHeight: 1.4,
-            padding: `0 ${6 * zoom}px`,
+            transform: "translate(-50%, -50%)",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
             background: "#ffffff",
             border: "1px solid #6366f1",
-            borderRadius: 6,
-            outline: "none",
-            color: "#334155",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.12)",
+            borderRadius: 8,
+            padding: "3px 4px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            zIndex: 20,
           }}
-        />
+        >
+          <button
+            title="小さく"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setEdgeLabelSize(s => Math.max(9, s - 1)); }}
+            style={{ width: 22, height: 22, borderRadius: 4, border: "none", background: "#f1f5f9", color: "#475569", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
+          >−</button>
+          <span style={{ fontSize: 11, color: "#64748b", width: 16, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{edgeLabelSize}</span>
+          <button
+            title="大きく"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setEdgeLabelSize(s => Math.min(40, s + 1)); }}
+            style={{ width: 22, height: 22, borderRadius: 4, border: "none", background: "#f1f5f9", color: "#475569", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
+          >+</button>
+          <input
+            ref={edgeLabelInputRef}
+            type="text"
+            value={edgeLabelText}
+            onChange={e => setEdgeLabelText(e.target.value)}
+            onBlur={commitEdgeLabel}
+            onKeyDown={e => {
+              e.stopPropagation();
+              if (e.key === "Enter") { e.preventDefault(); commitEdgeLabel(); }
+              if (e.key === "Escape") { setEditingEdgeLabel(null); }
+            }}
+            placeholder="線の文字…"
+            style={{
+              width: Math.max(80, edgeLabelSize * 6) * zoom,
+              height: Math.max(24, edgeLabelSize + 8) * zoom,
+              fontSize: edgeLabelSize * zoom,
+              textAlign: "center",
+              lineHeight: 1.2,
+              padding: `0 ${6 * zoom}px`,
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: 6,
+              outline: "none",
+              color: "#334155",
+            }}
+          />
+        </div>
       )}
 
       {/* リストアイテム インライン編集 */}
