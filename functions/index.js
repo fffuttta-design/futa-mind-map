@@ -14,6 +14,36 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import Anthropic from "@anthropic-ai/sdk";
 
+// ── AI使用量の中央集計への報告 ─────────────────────────────
+// Anthropicの公式使用量API(Admin API)は個人アカウントでは鍵が発行できないため、
+// 各アプリが自己申告する方式。結果は FutaFinance の「API使用量」画面に出る。
+const AI_USAGE_ENDPOINT_ = "https://hisho.run-strategy.jp/ai-usage";
+const AI_USAGE_APP_ = "futa-mind-map";
+const AI_USAGE_KEY_ = process.env.AI_USAGE_KEY || "";
+
+async function recordAiUsage_(res, kind) {
+  try {
+    if (!res || !res.usage) return;
+    const u = res.usage;
+    // ⚠️ Functionsは応答後に処理を止めるので、投げっぱなしにせず await する
+    await fetch(AI_USAGE_ENDPOINT_, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-usage-key": AI_USAGE_KEY_ },
+      body: JSON.stringify({
+        app: AI_USAGE_APP_, model: res.model || "", kind: kind || "",
+        usage: {
+          input_tokens: u.input_tokens || 0,
+          output_tokens: u.output_tokens || 0,
+          cache_creation_input_tokens: u.cache_creation_input_tokens || 0,
+          cache_read_input_tokens: u.cache_read_input_tokens || 0,
+        },
+      }),
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch (e) {}   // 記録に失敗しても本体は止めない
+}
+
+
 initializeApp();
 const db = getFirestore();
 
@@ -113,6 +143,7 @@ export const generateMindMap = onCall(
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: text }],
       });
+      await recordAiUsage_(message, "mindmap");
     } catch (e) {
       const status = e?.status;
       if (status === 401) throw new HttpsError("permission-denied", "APIキーが無効です。管理者に連絡してください。");
