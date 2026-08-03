@@ -10,11 +10,15 @@ interface Props {
   initialHasUpdate?: boolean;
   /** リロード前に呼ぶ保存フラッシュ（未保存データ消失を防ぐ） */
   onBeforeReload?: () => Promise<void>;
+  /** アカウント操作。渡されたときだけ「ログアウト」を表示する */
+  onLogout?: () => void;
+  /** アカウント表示用（任意） */
+  accountLabel?: string;
 }
 
 type CheckState = "idle" | "checking" | "latest" | "update-available";
 
-export default function SettingsModal({ onClose, initialLatestVersion, initialHasUpdate, onBeforeReload }: Props) {
+export default function SettingsModal({ onClose, initialLatestVersion, initialHasUpdate, onBeforeReload, onLogout, accountLabel }: Props) {
   const [checkState, setCheckState] = useState<CheckState>(
     initialHasUpdate ? "update-available" : "idle"
   );
@@ -119,6 +123,25 @@ export default function SettingsModal({ onClose, initialLatestVersion, initialHa
             再起動
           </button>
         </div>
+
+        {/* アカウント */}
+        {onLogout && (
+          <div className="px-6 pb-5 border-t border-gray-100 pt-5">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">アカウント</p>
+            {accountLabel && <p className="text-xs text-gray-500 mb-2 truncate">{accountLabel}</p>}
+            <button
+              onClick={onLogout}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-500 text-sm font-medium transition-colors border border-red-100"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              ログアウト
+            </button>
+          </div>
+        )}
 
         {/* フッター */}
         <div className="px-6 pb-4">

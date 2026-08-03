@@ -27,18 +27,25 @@ export default function MapsPage() {
   const [newFolderName, setNewFolderName] = useState("");
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  // 手動並び替えの順序（マップID配列）を端末に保存。ドラッグ＆ドロップで更新。
+  const [order, setOrder] = useState<string[]>([]);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null); // "" = すべて（フォルダなし）
   const { hasUpdate, latestVersion } = useVersionCheck();
 
   useEffect(() => {
     if (!loading && !user) router.push("/");
   }, [user, loading, router]);
 
-  // フォルダ名一覧のローカル保存の読み込み
+  // フォルダ名一覧・並び順のローカル保存の読み込み
   useEffect(() => {
     if (!user) return;
     try {
-      const raw = localStorage.getItem(`fmm-folders-${user.uid}`);
-      if (raw) setExtraFolders(JSON.parse(raw));
+      const f = localStorage.getItem(`fmm-folders-${user.uid}`);
+      if (f) setExtraFolders(JSON.parse(f));
+      const o = localStorage.getItem(`fmm-order-${user.uid}`);
+      if (o) setOrder(JSON.parse(o));
     } catch { /* noop */ }
   }, [user]);
 
@@ -46,6 +53,13 @@ export default function MapsPage() {
     setExtraFolders(names);
     if (user) {
       try { localStorage.setItem(`fmm-folders-${user.uid}`, JSON.stringify(names)); } catch { /* noop */ }
+    }
+  }, [user]);
+
+  const persistOrder = useCallback((ids: string[]) => {
+    setOrder(ids);
+    if (user) {
+      try { localStorage.setItem(`fmm-order-${user.uid}`, JSON.stringify(ids)); } catch { /* noop */ }
     }
   }, [user]);
 
@@ -76,8 +90,21 @@ export default function MapsPage() {
   const allTags = useMemo(() => [...new Set(maps.flatMap(m => m.tags ?? []))], [maps]);
   const folderCount = useCallback((f: string) => maps.filter(m => m.folder === f).length, [maps]);
 
+  // 手動並び順を優先し、未指定（新規）マップは更新日の新しい順で上に置く
+  const sortedMaps = useMemo(() => {
+    if (order.length === 0) return maps;
+    const idx = new Map(order.map((id, i) => [id, i]));
+    return [...maps].sort((a, b) => {
+      const ha = idx.has(a.id), hb = idx.has(b.id);
+      if (ha && hb) return idx.get(a.id)! - idx.get(b.id)!;
+      if (ha) return 1;   // 並び順に無い（新規）を上へ
+      if (hb) return -1;
+      return b.updatedAt - a.updatedAt;
+    });
+  }, [maps, order]);
+
   const filteredMaps = useMemo(() => {
-    return maps.filter(m => {
+    return sortedMaps.filter(m => {
       if (selectedFolder !== null && m.folder !== selectedFolder) return false;
       if (selectedTag !== null && !(m.tags ?? []).includes(selectedTag)) return false;
       if (searchQuery) {
@@ -88,7 +115,19 @@ export default function MapsPage() {
       }
       return true;
     });
-  }, [maps, selectedFolder, selectedTag, searchQuery]);
+  }, [sortedMaps, selectedFolder, selectedTag, searchQuery]);
+
+  // 並び替えは「すべて（絞り込みなし）」表示のときだけ有効
+  const canReorder = selectedFolder === null && selectedTag === null && !searchQuery;
+
+  const reorderTo = useCallback((dragId: string, targetId: string) => {
+    if (!dragId || dragId === targetId) return;
+    const ids = sortedMaps.map(m => m.id).filter(id => id !== dragId);
+    const ti = ids.indexOf(targetId);
+    if (ti < 0) return;
+    ids.splice(ti, 0, dragId);
+    persistOrder(ids);
+  }, [sortedMaps, persistOrder]);
 
   const LINE_TEMPLATE_NODES: MindMapNode[] = [
     { id: "root",  text: "LINEシナリオ設計", x: 0,   y: 0,    parentId: null,  color: "#06C755" },
@@ -198,12 +237,21 @@ export default function MapsPage() {
             className="w-full px-4 py-2 text-sm bg-gray-100 rounded-lg outline-none focus:bg-white focus:ring-1 focus:ring-indigo-300 transition-all"
           />
         </div>
-        <div className="flex items-center gap-4 ml-auto">
-          <span className="text-sm text-gray-500" title={user?.email ?? ""}>
+        <div className="flex items-center gap-3 ml-auto">
+          <span className="text-sm text-gray-400 hidden sm:inline" title={user?.email ?? ""}>
             {user?.displayName}
-            {user?.email && <span className="text-gray-400 ml-1">({user.email})</span>}
           </span>
-          <button onClick={signOut} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">ログアウト</button>
+          <button
+            onClick={() => setShowSettings(true)}
+            title="設定"
+            className="relative w-9 h-9 rounded-full bg-gray-50 hover:bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            {hasUpdate && <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-400 rounded-full border-2 border-white" />}
+          </button>
         </div>
       </header>
 
@@ -226,7 +274,10 @@ export default function MapsPage() {
           <nav className="space-y-0.5">
             <button
               onClick={() => setSelectedFolder(null)}
-              className={`w-full text-left px-2.5 py-1.5 rounded-md text-sm transition-colors ${selectedFolder === null ? "bg-indigo-50 text-indigo-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
+              onDragOver={e => { if (draggingId) { e.preventDefault(); setDragOverFolder(""); } }}
+              onDragLeave={() => setDragOverFolder(cur => (cur === "" ? null : cur))}
+              onDrop={e => { if (draggingId) { e.preventDefault(); moveToFolder(draggingId, ""); setDraggingId(null); setDragOverFolder(null); } }}
+              className={`w-full text-left px-2.5 py-1.5 rounded-md text-sm transition-colors ${dragOverFolder === "" ? "ring-2 ring-indigo-400 bg-indigo-50" : selectedFolder === null ? "bg-indigo-50 text-indigo-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
             >
               🗂️ すべて <span className="text-gray-400 text-xs">({maps.length})</span>
             </button>
@@ -244,7 +295,13 @@ export default function MapsPage() {
             )}
 
             {folders.map(f => (
-              <div key={f} className="group flex items-center gap-1">
+              <div
+                key={f}
+                className={`group flex items-center gap-1 rounded-md ${dragOverFolder === f ? "ring-2 ring-indigo-400 bg-indigo-50" : ""}`}
+                onDragOver={e => { if (draggingId) { e.preventDefault(); setDragOverFolder(f); } }}
+                onDragLeave={() => setDragOverFolder(cur => (cur === f ? null : cur))}
+                onDrop={e => { if (draggingId) { e.preventDefault(); moveToFolder(draggingId, f); setDraggingId(null); setDragOverFolder(null); } }}
+              >
                 {renamingFolder === f ? (
                   <input
                     autoFocus
@@ -314,9 +371,16 @@ export default function MapsPage() {
               {filteredMaps.map(map => (
                 <div
                   key={map.id}
+                  draggable
+                  onDragStart={e => { setDraggingId(map.id); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragEnd={() => { setDraggingId(null); setDragOverId(null); setDragOverFolder(null); }}
+                  onDragOver={e => { if (draggingId && draggingId !== map.id && canReorder) { e.preventDefault(); setDragOverId(map.id); } }}
+                  onDragLeave={() => setDragOverId(cur => (cur === map.id ? null : cur))}
+                  onDrop={e => { if (draggingId && canReorder) { e.preventDefault(); reorderTo(draggingId, map.id); setDraggingId(null); setDragOverId(null); } }}
                   onClick={() => router.push(`/maps/${map.id}`)}
-                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-50/40 cursor-pointer group"
+                  className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer group transition-colors ${draggingId === map.id ? "opacity-40" : "hover:bg-indigo-50/40"} ${dragOverId === map.id ? "border-t-2 border-indigo-400" : "border-t-2 border-transparent"}`}
                 >
+                  <span className="shrink-0 w-4 text-center text-gray-300 group-hover:text-gray-400 cursor-grab active:cursor-grabbing select-none" title="ドラッグで並び替え・フォルダへ移動">⠿</span>
                   <span className="shrink-0 text-base w-5 text-center" title={map.mode === "line" ? "LINE" : "マインドマップ"}>
                     {map.mode === "line" ? "📱" : "🗺️"}
                   </span>
@@ -366,21 +430,6 @@ export default function MapsPage() {
           )}
         </main>
       </div>
-      {/* 全体設定ボタン（左下固定） */}
-      <button
-        onClick={() => setShowSettings(true)}
-        title="アプリ設定"
-        className="fixed bottom-5 left-5 w-9 h-9 rounded-full bg-white hover:bg-gray-50 border border-gray-200 shadow-md flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all z-40"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-        </svg>
-        {hasUpdate && (
-          <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-400 rounded-full border-2 border-white" />
-        )}
-      </button>
-
       {/* テンプレート選択ダイアログ */}
       {showTemplateDialog && (
         <div
@@ -427,6 +476,8 @@ export default function MapsPage() {
           onClose={() => setShowSettings(false)}
           initialHasUpdate={hasUpdate}
           initialLatestVersion={latestVersion}
+          onLogout={signOut}
+          accountLabel={user?.email ?? user?.displayName ?? undefined}
         />
       )}
     </div>
