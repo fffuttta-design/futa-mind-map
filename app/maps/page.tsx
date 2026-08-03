@@ -417,7 +417,7 @@ export default function MapsPage() {
         {/* モバイル: ドロワーの背景 */}
         {sidebarOpen && <div className="fixed inset-0 bg-black/30 z-30 md:hidden" onClick={() => setSidebarOpen(false)} />}
         <aside
-          className={`bg-white border-r border-gray-100 p-4 shrink-0 relative overflow-y-auto md:overflow-visible fixed md:relative inset-y-0 left-0 z-40 md:z-auto transform transition-transform duration-200 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}
+          className={`bg-white border-r border-gray-100 p-4 shrink-0 overflow-y-auto md:overflow-visible fixed md:relative inset-y-0 left-0 z-40 md:z-auto transform transition-transform duration-200 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}
           style={{ width: sidebarWidth }}>
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">フォルダ</p>
