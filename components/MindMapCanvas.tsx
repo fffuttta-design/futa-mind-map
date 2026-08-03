@@ -2653,8 +2653,10 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                           const lh = nodeLineH(node);
                           const totalH = (textLines.length - 1) * lh;
                           const display = line.length > 20 ? line.slice(0, 20) + "…" : line;
+                          // チェックボックスノードは左にボックス分の余白があるので、テキストを右へ寄せて重なりを防ぐ
+                          const cbShift = node.isCheckbox ? 22 : 0;
                           return (
-                            <tspan key={i} x={node.icon ? 8 : 0} dy={i === 0 ? -totalH / 2 : lh}>
+                            <tspan key={i} x={(node.icon ? 8 : 0) + cbShift} dy={i === 0 ? -totalH / 2 : lh}>
                               {display}
                             </tspan>
                           );
@@ -2730,14 +2732,14 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                     {/* チェックボックス（isCheckbox=true のノードのテキスト左に表示） */}
                     {node.isCheckbox && (
                       <g
-                        transform={`translate(${-w / 2 + 28}, 0)`}
+                        transform={`translate(${-w / 2 + 22}, 0)`}
                         onMouseDown={e => e.stopPropagation()}
                         onClick={e => { e.stopPropagation(); toggleNodeChecked(node.id); }}
                         style={{ cursor: "pointer" }}
                       >
-                        <rect x={-9} y={-9} width={18} height={18} rx={4}
-                          fill={node.checked ? "#10b981" : "rgba(255,255,255,0.2)"}
-                          stroke={node.checked ? "#10b981" : "rgba(255,255,255,0.8)"}
+                        <rect x={-9} y={-9} width={18} height={18} rx={5}
+                          fill={node.checked ? "#10b981" : "#ffffff"}
+                          stroke={node.checked ? "#059669" : "#94a3b8"}
                           strokeWidth={1.5}
                         />
                         {node.checked && (
