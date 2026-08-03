@@ -296,6 +296,25 @@ function nodeLineH(node: MindMapNode): number {
   return Math.max(LINE_H, Math.ceil((node.fontSize ?? 13) * 1.5));
 }
 
+// 文字列の見た目の幅を「文字数換算」で測る。全角(CJK・かな・全角記号)は約1、
+// 半角(英数記号)は約0.55 として数える。日本語の長いラベルの見切れ防止に使う。
+function visualTextLen(s: string): number {
+  let n = 0;
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0;
+    const isFull =
+      (cp >= 0x1100 && cp <= 0x115f) ||   // ハングル字母
+      (cp >= 0x2e80 && cp <= 0xa4cf) ||   // CJK部首〜漢字・かな・記号
+      (cp >= 0xac00 && cp <= 0xd7a3) ||   // ハングル音節
+      (cp >= 0xf900 && cp <= 0xfaff) ||   // CJK互換漢字
+      (cp >= 0xfe30 && cp <= 0xfe4f) ||   // CJK互換形
+      (cp >= 0xff00 && cp <= 0xff60) ||   // 全角英数・記号
+      (cp >= 0xffe0 && cp <= 0xffe6);     // 全角通貨記号
+    n += isFull ? 1 : 0.55;
+  }
+  return n;
+}
+
 function nodeWidth(node: MindMapNode): number {
   if (node.customWidth) return node.customWidth;
   if (node.noteContent !== undefined) return LIST_MIN_W;
@@ -303,8 +322,9 @@ function nodeWidth(node: MindMapNode): number {
   if (node.imageWidth) return node.imageWidth;
   const fs = node.fontSize ?? 13;
   const k = fs / 13; // 文字サイズ倍率（既定 13px を基準に幅もスケール）
-  const maxLineLen = Math.max(...node.text.split("\n").map(l => l.length), 1);
-  const base = Math.max(80, Math.min(220 * k, maxLineLen * 8.5 * k + 48));
+  // 全角=約fs px、半角=約0.55fs px として実幅を見積もる（旧: 一律8.5pxで全角を過小評価し見切れていた）
+  const maxLineLen = Math.max(...node.text.split("\n").map(l => visualTextLen(l)), 1);
+  const base = Math.max(80, Math.min(260 * k, maxLineLen * 13 * k + 24));
   const cbPad = node.isCheckbox ? 44 : 0;
   if (node.shape === "circle") { const cd = NODE_H * 2 + 8; return (fs > 13 ? Math.max(cd, base) : cd) + cbPad; }
   if (node.shape === "diamond") return base + 24 + cbPad;

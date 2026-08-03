@@ -35,7 +35,7 @@ export async function generateMindMapFromText(
 // 横型ツリー: ルートを左に置き、世代ごとに右へ展開。
 // 各サブツリーが必要とする縦幅を計算して兄弟が重ならないように積む。
 
-const X_GAP = 260; // 世代間の横間隔
+const X_GAP = 300; // 世代間の横間隔
 const Y_GAP = 64;  // 葉ノード間の縦間隔
 
 interface TreeNode {
