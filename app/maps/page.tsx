@@ -322,7 +322,7 @@ export default function MapsPage() {
       onClick={() => router.push(`/maps/${map.id}`)}
       className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer group transition-colors ${draggingId === map.id ? "opacity-40" : "hover:bg-indigo-50/40"} ${dragOverId === map.id ? "border-t-2 border-indigo-400" : "border-t-2 border-transparent"}`}
     >
-      <span className="shrink-0 w-4 text-center text-gray-300 group-hover:text-gray-400 cursor-grab active:cursor-grabbing select-none" title="ドラッグで並び替え・フォルダへ移動">⠿</span>
+      <span className="hidden md:block shrink-0 w-4 text-center text-gray-300 group-hover:text-gray-400 cursor-grab active:cursor-grabbing select-none" title="ドラッグで並び替え・フォルダへ移動">⠿</span>
       <span className="shrink-0 text-base w-5 text-center" title={map.mode === "line" ? "LINE" : "マインドマップ"}>
         {map.mode === "line" ? "📱" : "🗺️"}
       </span>
@@ -351,7 +351,7 @@ export default function MapsPage() {
         onClick={e => e.stopPropagation()}
         onChange={e => moveToFolder(map.id, e.target.value)}
         title="フォルダを移動"
-        className={`shrink-0 text-xs bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 outline-none max-w-[9rem] transition-opacity cursor-pointer ${map.folder ? "opacity-100 text-indigo-500" : "opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-400"}`}
+        className={`hidden md:block shrink-0 text-xs bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 outline-none max-w-[9rem] transition-opacity cursor-pointer ${map.folder ? "opacity-100 text-indigo-500" : "opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-400"}`}
       >
         <option value="">📁 なし</option>
         {folders.map(f => <option key={f.name} value={f.name}>{f.icon} {f.name}</option>)}
@@ -360,7 +360,7 @@ export default function MapsPage() {
       <button
         onClick={e => deleteMap(e, map.id, map.title)}
         title="削除"
-        className="shrink-0 text-gray-300 hover:text-red-400 transition-colors text-lg leading-none opacity-0 group-hover:opacity-100 w-5"
+        className="shrink-0 text-gray-300 hover:text-red-400 transition-colors text-lg leading-none opacity-60 md:opacity-0 md:group-hover:opacity-100 w-6 md:w-5"
       >
         ×
       </button>
