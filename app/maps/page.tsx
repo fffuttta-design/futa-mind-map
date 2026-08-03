@@ -10,6 +10,11 @@ import { APP_VERSION } from "@/lib/version";
 import SettingsModal from "@/components/SettingsModal";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
 
+type FolderMeta = { name: string; icon: string };
+
+const FOLDER_ICONS = ["📁", "📂", "🗂️", "⭐", "🔥", "💼", "🎬", "📱", "💡", "🎯", "📊", "🚀", "❤️", "📌", "🧠", "💰", "🌱", "🏷️", "🔖", "✅"];
+const SIDEBAR_MIN = 168, SIDEBAR_MAX = 420, SIDEBAR_DEFAULT = 224;
+
 export default function MapsPage() {
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
@@ -21,46 +26,64 @@ export default function MapsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // 空フォルダも保持できるよう、フォルダ名の一覧を端末に保存（マップに紐付く前でも消えない）
-  const [extraFolders, setExtraFolders] = useState<string[]>([]);
+
+  // フォルダ（名前＋アイコン＋並び順）を端末に保存。空フォルダも保持できる。
+  const [folderMeta, setFolderMeta] = useState<FolderMeta[]>([]);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  // 手動並び替えの順序（マップID配列）を端末に保存。ドラッグ＆ドロップで更新。
+  const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
+
+  // マップの手動並び順（ID配列）を端末に保存
   const [order, setOrder] = useState<string[]>([]);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);       // ドラッグ中のマップ
+  const [draggingFolder, setDraggingFolder] = useState<string | null>(null); // ドラッグ中のフォルダ
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null); // "" = すべて（フォルダなし）
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null); // "" = すべて（フォルダ解除）
+
+  // サイドバー幅（可変・記憶）
+  const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_DEFAULT);
+
   const { hasUpdate, latestVersion } = useVersionCheck();
 
   useEffect(() => {
     if (!loading && !user) router.push("/");
   }, [user, loading, router]);
 
-  // フォルダ名一覧・並び順のローカル保存の読み込み
+  // ローカル保存の読み込み（フォルダ／並び順／サイドバー幅）。旧形式(string[])も移行。
   useEffect(() => {
     if (!user) return;
     try {
       const f = localStorage.getItem(`fmm-folders-${user.uid}`);
-      if (f) setExtraFolders(JSON.parse(f));
+      if (f) {
+        const parsed = JSON.parse(f);
+        if (Array.isArray(parsed)) {
+          setFolderMeta(parsed.map((x: unknown) =>
+            typeof x === "string" ? { name: x, icon: "📁" } : (x as FolderMeta)
+          ).filter((x: FolderMeta) => x && x.name));
+        }
+      }
       const o = localStorage.getItem(`fmm-order-${user.uid}`);
       if (o) setOrder(JSON.parse(o));
+      const w = localStorage.getItem(`fmm-sidebar-w-${user.uid}`);
+      if (w) setSidebarWidth(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Number(w) || SIDEBAR_DEFAULT)));
     } catch { /* noop */ }
   }, [user]);
 
-  const persistFolders = useCallback((names: string[]) => {
-    setExtraFolders(names);
-    if (user) {
-      try { localStorage.setItem(`fmm-folders-${user.uid}`, JSON.stringify(names)); } catch { /* noop */ }
-    }
+  const persistFolders = useCallback((metas: FolderMeta[]) => {
+    setFolderMeta(metas);
+    if (user) { try { localStorage.setItem(`fmm-folders-${user.uid}`, JSON.stringify(metas)); } catch { /* noop */ } }
   }, [user]);
 
   const persistOrder = useCallback((ids: string[]) => {
     setOrder(ids);
-    if (user) {
-      try { localStorage.setItem(`fmm-order-${user.uid}`, JSON.stringify(ids)); } catch { /* noop */ }
-    }
+    if (user) { try { localStorage.setItem(`fmm-order-${user.uid}`, JSON.stringify(ids)); } catch { /* noop */ } }
+  }, [user]);
+
+  const persistSidebar = useCallback((w: number) => {
+    setSidebarWidth(w);
+    if (user) { try { localStorage.setItem(`fmm-sidebar-w-${user.uid}`, String(w)); } catch { /* noop */ } }
   }, [user]);
 
   useEffect(() => {
@@ -82,13 +105,18 @@ export default function MapsPage() {
     return unsub;
   }, [user]);
 
-  // マップに実在するフォルダ ＋ 空フォルダ（ローカル保存）を統合
-  const folders = useMemo(() => {
-    const fromMaps = maps.map(m => m.folder).filter(Boolean) as string[];
-    return [...new Set([...extraFolders, ...fromMaps])].sort((a, b) => a.localeCompare(b, "ja"));
-  }, [maps, extraFolders]);
+  // マップに実在するフォルダ名を folderMeta に取り込む（順序の正はfolderMeta）
+  useEffect(() => {
+    if (!user) return;
+    const known = new Set(folderMeta.map(f => f.name));
+    const missing = [...new Set(maps.map(m => m.folder).filter(Boolean) as string[])].filter(n => !known.has(n));
+    if (missing.length) persistFolders([...folderMeta, ...missing.map(n => ({ name: n, icon: "📁" }))]);
+  }, [maps, folderMeta, user, persistFolders]);
+
+  const folders = folderMeta; // 表示順＝folderMetaの順
   const allTags = useMemo(() => [...new Set(maps.flatMap(m => m.tags ?? []))], [maps]);
   const folderCount = useCallback((f: string) => maps.filter(m => m.folder === f).length, [maps]);
+  const iconOf = useCallback((name: string | null | undefined) => folderMeta.find(f => f.name === name)?.icon ?? "📁", [folderMeta]);
 
   // 手動並び順を優先し、未指定（新規）マップは更新日の新しい順で上に置く
   const sortedMaps = useMemo(() => {
@@ -97,7 +125,7 @@ export default function MapsPage() {
     return [...maps].sort((a, b) => {
       const ha = idx.has(a.id), hb = idx.has(b.id);
       if (ha && hb) return idx.get(a.id)! - idx.get(b.id)!;
-      if (ha) return 1;   // 並び順に無い（新規）を上へ
+      if (ha) return 1;
       if (hb) return -1;
       return b.updatedAt - a.updatedAt;
     });
@@ -117,7 +145,6 @@ export default function MapsPage() {
     });
   }, [sortedMaps, selectedFolder, selectedTag, searchQuery]);
 
-  // 並び替えは「すべて（絞り込みなし）」表示のときだけ有効
   const canReorder = selectedFolder === null && selectedTag === null && !searchQuery;
 
   const reorderTo = useCallback((dragId: string, targetId: string) => {
@@ -184,8 +211,9 @@ export default function MapsPage() {
     const name = newFolderName.trim();
     setCreatingFolder(false);
     setNewFolderName("");
-    if (!name || folders.includes(name)) { if (name) setSelectedFolder(name); return; }
-    persistFolders([...extraFolders, name]);
+    if (!name) return;
+    if (folderMeta.some(f => f.name === name)) { setSelectedFolder(name); return; }
+    persistFolders([...folderMeta, { name, icon: "📁" }]);
     setSelectedFolder(name);
   };
 
@@ -194,14 +222,13 @@ export default function MapsPage() {
     setRenamingFolder(null);
     setRenameValue("");
     if (!name || name === oldName) return;
-    // 該当フォルダの全マップを一括で付け替え
     const targets = maps.filter(m => m.folder === oldName);
     if (targets.length) {
       const batch = writeBatch(db);
       targets.forEach(m => batch.update(doc(db, "maps", m.id), { folder: name }));
       await batch.commit();
     }
-    persistFolders([...new Set(extraFolders.filter(f => f !== oldName).concat(name))]);
+    persistFolders(folderMeta.map(f => f.name === oldName ? { ...f, name } : f));
     if (selectedFolder === oldName) setSelectedFolder(name);
   };
 
@@ -214,13 +241,48 @@ export default function MapsPage() {
       targets.forEach(m => batch.update(doc(db, "maps", m.id), { folder: null }));
       await batch.commit();
     }
-    persistFolders(extraFolders.filter(f => f !== name));
+    persistFolders(folderMeta.filter(f => f.name !== name));
     if (selectedFolder === name) setSelectedFolder(null);
   };
 
-  if (loading) return <div className="flex items-center justify-center min-h-screen text-gray-400 text-sm">読み込み中...</div>;
+  const setFolderIcon = (name: string, icon: string) => {
+    persistFolders(folderMeta.map(f => f.name === name ? { ...f, icon } : f));
+    setIconPickerFor(null);
+  };
 
-  const folderBtnBase = "flex-1 text-left px-2.5 py-1.5 rounded-md text-sm truncate transition-colors";
+  const reorderFolder = (dragName: string, targetName: string) => {
+    if (!dragName || dragName === targetName) return;
+    const arr = folderMeta.filter(f => f.name !== dragName);
+    const ti = arr.findIndex(f => f.name === targetName);
+    if (ti < 0) return;
+    const moved = folderMeta.find(f => f.name === dragName);
+    if (!moved) return;
+    arr.splice(ti, 0, moved);
+    persistFolders(arr);
+  };
+
+  // ── サイドバー幅のドラッグ ──────────────────────
+  const startSidebarResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    let latest = startW;
+    const onMove = (ev: MouseEvent) => {
+      latest = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startW + ev.clientX - startX));
+      setSidebarWidth(latest);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      persistSidebar(latest);
+    };
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  if (loading) return <div className="flex items-center justify-center min-h-screen text-gray-400 text-sm">読み込み中...</div>;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -261,8 +323,8 @@ export default function MapsPage() {
         </div>
       )}
 
-      <div className="flex flex-1">
-        <aside className="w-56 bg-white border-r border-gray-100 p-4 shrink-0">
+      <div className="flex flex-1 min-h-0">
+        <aside className="bg-white border-r border-gray-100 p-4 shrink-0 relative" style={{ width: sidebarWidth }}>
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">フォルダ</p>
             <button
@@ -296,32 +358,55 @@ export default function MapsPage() {
 
             {folders.map(f => (
               <div
-                key={f}
-                className={`group flex items-center gap-1 rounded-md ${dragOverFolder === f ? "ring-2 ring-indigo-400 bg-indigo-50" : ""}`}
-                onDragOver={e => { if (draggingId) { e.preventDefault(); setDragOverFolder(f); } }}
-                onDragLeave={() => setDragOverFolder(cur => (cur === f ? null : cur))}
-                onDrop={e => { if (draggingId) { e.preventDefault(); moveToFolder(draggingId, f); setDraggingId(null); setDragOverFolder(null); } }}
+                key={f.name}
+                draggable={renamingFolder !== f.name}
+                onDragStart={e => { if (renamingFolder === f.name) return; setDraggingFolder(f.name); e.dataTransfer.effectAllowed = "move"; }}
+                onDragEnd={() => { setDraggingFolder(null); setDragOverFolder(null); }}
+                onDragOver={e => {
+                  if (draggingId || (draggingFolder && draggingFolder !== f.name)) { e.preventDefault(); setDragOverFolder(f.name); }
+                }}
+                onDragLeave={() => setDragOverFolder(cur => (cur === f.name ? null : cur))}
+                onDrop={e => {
+                  e.preventDefault();
+                  if (draggingId) { moveToFolder(draggingId, f.name); setDraggingId(null); }
+                  else if (draggingFolder && draggingFolder !== f.name) { reorderFolder(draggingFolder, f.name); setDraggingFolder(null); }
+                  setDragOverFolder(null);
+                }}
+                className={`group flex items-center gap-0.5 rounded-md relative ${draggingFolder === f.name ? "opacity-40" : ""} ${dragOverFolder === f.name ? "ring-2 ring-indigo-400 bg-indigo-50" : ""}`}
               >
-                {renamingFolder === f ? (
+                {renamingFolder === f.name ? (
                   <input
                     autoFocus
                     value={renameValue}
                     onChange={e => setRenameValue(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") renameFolder(f); if (e.key === "Escape") { setRenamingFolder(null); setRenameValue(""); } }}
-                    onBlur={() => renameFolder(f)}
+                    onKeyDown={e => { if (e.key === "Enter") renameFolder(f.name); if (e.key === "Escape") { setRenamingFolder(null); setRenameValue(""); } }}
+                    onBlur={() => renameFolder(f.name)}
                     className="flex-1 text-sm border border-indigo-300 rounded-md px-2.5 py-1.5 outline-none"
                   />
                 ) : (
                   <>
                     <button
-                      onClick={() => setSelectedFolder(f)}
-                      className={`${folderBtnBase} ${selectedFolder === f ? "bg-indigo-50 text-indigo-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
+                      onClick={() => setIconPickerFor(cur => cur === f.name ? null : f.name)}
+                      title="アイコンを変更"
+                      className="shrink-0 w-6 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-base leading-none"
+                    >{f.icon}</button>
+                    <button
+                      onClick={() => setSelectedFolder(f.name)}
+                      className={`flex-1 text-left px-1 py-1.5 rounded-md text-sm truncate transition-colors ${selectedFolder === f.name ? "text-indigo-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
                     >
-                      📁 {f} <span className="text-gray-400 text-xs">({folderCount(f)})</span>
+                      {f.name} <span className="text-gray-400 text-xs">({folderCount(f.name)})</span>
                     </button>
-                    <button onClick={() => { setRenamingFolder(f); setRenameValue(f); }} title="名前を変更" className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-indigo-500 text-xs w-5 h-5 shrink-0 transition-all">✎</button>
-                    <button onClick={() => deleteFolder(f)} title="フォルダを削除" className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-sm w-5 h-5 shrink-0 transition-all leading-none">×</button>
+                    <button onClick={() => { setRenamingFolder(f.name); setRenameValue(f.name); }} title="名前を変更" className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-indigo-500 text-xs w-5 h-5 shrink-0 transition-all">✎</button>
+                    <button onClick={() => deleteFolder(f.name)} title="フォルダを削除" className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-sm w-5 h-5 shrink-0 transition-all leading-none">×</button>
                   </>
+                )}
+
+                {iconPickerFor === f.name && (
+                  <div className="absolute z-30 top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg p-2 grid grid-cols-5 gap-1 w-52" onClick={e => e.stopPropagation()}>
+                    {FOLDER_ICONS.map(ic => (
+                      <button key={ic} onClick={() => setFolderIcon(f.name, ic)} className={`w-8 h-8 flex items-center justify-center rounded hover:bg-indigo-50 text-lg ${f.icon === ic ? "bg-indigo-100" : ""}`}>{ic}</button>
+                    ))}
+                  </div>
                 )}
               </div>
             ))}
@@ -343,12 +428,19 @@ export default function MapsPage() {
               </div>
             </>
           )}
+
+          {/* 幅リサイズハンドル */}
+          <div
+            onMouseDown={startSidebarResize}
+            title="ドラッグで幅を調整"
+            className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-indigo-200 active:bg-indigo-300 transition-colors"
+          />
         </aside>
 
-        <main className="flex-1 p-6 lg:p-8">
+        <main className="flex-1 p-6 lg:p-8 min-w-0">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-800">
-              {selectedFolder ? `📁 ${selectedFolder}` : "すべてのマップ"}
+              {selectedFolder ? `${iconOf(selectedFolder)} ${selectedFolder}` : "すべてのマップ"}
               <span className="text-sm font-normal text-gray-400 ml-2">{filteredMaps.length}件</span>
               {searchQuery && <span className="text-sm font-normal text-gray-400 ml-2">「{searchQuery}」の検索結果</span>}
             </h2>
@@ -391,7 +483,6 @@ export default function MapsPage() {
 
                   {map.isPublic && <span className="shrink-0 text-[10px] text-green-600" title="公開中">●公開</span>}
 
-                  {/* タグ（小さく） */}
                   <div className="hidden md:flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                     {(map.tags ?? []).slice(0, 3).map(tag => (
                       <span key={tag} className="group/tag inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-500 rounded text-[11px]">
@@ -411,10 +502,10 @@ export default function MapsPage() {
                     onClick={e => e.stopPropagation()}
                     onChange={e => moveToFolder(map.id, e.target.value)}
                     title="フォルダを移動"
-                    className={`shrink-0 text-xs bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 outline-none max-w-[8rem] transition-opacity cursor-pointer ${map.folder ? "opacity-100 text-indigo-500" : "opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-400"}`}
+                    className={`shrink-0 text-xs bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 outline-none max-w-[9rem] transition-opacity cursor-pointer ${map.folder ? "opacity-100 text-indigo-500" : "opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-400"}`}
                   >
                     <option value="">📁 なし</option>
-                    {folders.map(f => <option key={f} value={f}>📁 {f}</option>)}
+                    {folders.map(f => <option key={f.name} value={f.name}>{f.icon} {f.name}</option>)}
                   </select>
 
                   <button
@@ -430,6 +521,7 @@ export default function MapsPage() {
           )}
         </main>
       </div>
+
       {/* テンプレート選択ダイアログ */}
       {showTemplateDialog && (
         <div
