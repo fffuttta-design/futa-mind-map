@@ -145,7 +145,10 @@ export default function MapsPage() {
     });
   }, [sortedMaps, selectedFolder, selectedTag, searchQuery]);
 
-  const canReorder = selectedFolder === null && selectedTag === null && !searchQuery;
+  // 並び替えはタグ絞り込み・検索が無いときに有効（フォルダ選択中や「すべて」表示でも可）
+  const canReorder = selectedTag === null && !searchQuery;
+  // 「すべて」表示のときはフォルダごとにセクション分けする
+  const grouped = selectedFolder === null && selectedTag === null && !searchQuery;
 
   const reorderTo = useCallback((dragId: string, targetId: string) => {
     if (!dragId || dragId === targetId) return;
@@ -155,6 +158,24 @@ export default function MapsPage() {
     ids.splice(ti, 0, dragId);
     persistOrder(ids);
   }, [sortedMaps, persistOrder]);
+
+  // フォルダごとのセクション（グループ表示用）。フォルダ順→最後に「フォルダなし」。
+  const sections = useMemo(() => {
+    const byFolder = new Map<string, MindMap[]>();
+    for (const m of filteredMaps) {
+      const key = m.folder ?? "";
+      const arr = byFolder.get(key);
+      if (arr) arr.push(m); else byFolder.set(key, [m]);
+    }
+    const out: { key: string; icon: string; name: string; items: MindMap[] }[] = [];
+    for (const f of folderMeta) {
+      const items = byFolder.get(f.name);
+      if (items && items.length) out.push({ key: f.name, icon: f.icon, name: f.name, items });
+    }
+    const none = byFolder.get("");
+    if (none && none.length) out.push({ key: "", icon: "🗂️", name: "フォルダなし", items: none });
+    return out;
+  }, [filteredMaps, folderMeta]);
 
   const LINE_TEMPLATE_NODES: MindMapNode[] = [
     { id: "root",  text: "LINEシナリオ設計", x: 0,   y: 0,    parentId: null,  color: "#06C755" },
@@ -281,6 +302,68 @@ export default function MapsPage() {
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
+
+  const sameFolder = (aId: string | null, bFolder: string | null | undefined) => {
+    const a = maps.find(m => m.id === aId);
+    return a ? (a.folder ?? "") === (bFolder ?? "") : false;
+  };
+
+  const renderRow = (map: MindMap) => (
+    <div
+      key={map.id}
+      draggable
+      onDragStart={e => { setDraggingId(map.id); e.dataTransfer.effectAllowed = "move"; }}
+      onDragEnd={() => { setDraggingId(null); setDragOverId(null); setDragOverFolder(null); }}
+      onDragOver={e => { if (draggingId && draggingId !== map.id && canReorder && sameFolder(draggingId, map.folder)) { e.preventDefault(); setDragOverId(map.id); } }}
+      onDragLeave={() => setDragOverId(cur => (cur === map.id ? null : cur))}
+      onDrop={e => { if (draggingId && canReorder && sameFolder(draggingId, map.folder)) { e.preventDefault(); reorderTo(draggingId, map.id); setDraggingId(null); setDragOverId(null); } }}
+      onClick={() => router.push(`/maps/${map.id}`)}
+      className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer group transition-colors ${draggingId === map.id ? "opacity-40" : "hover:bg-indigo-50/40"} ${dragOverId === map.id ? "border-t-2 border-indigo-400" : "border-t-2 border-transparent"}`}
+    >
+      <span className="shrink-0 w-4 text-center text-gray-300 group-hover:text-gray-400 cursor-grab active:cursor-grabbing select-none" title="ドラッグで並び替え・フォルダへ移動">⠿</span>
+      <span className="shrink-0 text-base w-5 text-center" title={map.mode === "line" ? "LINE" : "マインドマップ"}>
+        {map.mode === "line" ? "📱" : "🗺️"}
+      </span>
+
+      <span className="font-medium text-gray-800 group-hover:text-indigo-600 transition-colors truncate min-w-0">
+        {map.title}
+      </span>
+
+      {map.isPublic && <span className="shrink-0 text-[10px] text-green-600" title="公開中">●公開</span>}
+
+      <div className="hidden md:flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+        {(map.tags ?? []).slice(0, 3).map(tag => (
+          <span key={tag} className="group/tag inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-500 rounded text-[11px]">
+            {tag}
+            <button onClick={() => removeTag(map.id, tag)} className="opacity-0 group-hover/tag:opacity-100 text-indigo-300 hover:text-indigo-600 leading-none">×</button>
+          </span>
+        ))}
+      </div>
+
+      <span className="ml-auto shrink-0 text-xs text-gray-400 whitespace-nowrap tabular-nums">
+        {new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード
+      </span>
+
+      <select
+        value={map.folder ?? ""}
+        onClick={e => e.stopPropagation()}
+        onChange={e => moveToFolder(map.id, e.target.value)}
+        title="フォルダを移動"
+        className={`shrink-0 text-xs bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 outline-none max-w-[9rem] transition-opacity cursor-pointer ${map.folder ? "opacity-100 text-indigo-500" : "opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-400"}`}
+      >
+        <option value="">📁 なし</option>
+        {folders.map(f => <option key={f.name} value={f.name}>{f.icon} {f.name}</option>)}
+      </select>
+
+      <button
+        onClick={e => deleteMap(e, map.id, map.title)}
+        title="削除"
+        className="shrink-0 text-gray-300 hover:text-red-400 transition-colors text-lg leading-none opacity-0 group-hover:opacity-100 w-5"
+      >
+        ×
+      </button>
+    </div>
+  );
 
   if (loading) return <div className="flex items-center justify-center min-h-screen text-gray-400 text-sm">読み込み中...</div>;
 
@@ -458,65 +541,24 @@ export default function MapsPage() {
               <p className="text-4xl mb-4">🗺️</p>
               <p>{searchQuery ? "検索結果がありません" : "まだマップがありません"}</p>
             </div>
+          ) : grouped ? (
+            <div className="space-y-6">
+              {sections.map(sec => (
+                <section key={sec.key || "_none"}>
+                  <div className="flex items-center gap-2 px-1 mb-2 text-sm font-semibold text-gray-500">
+                    <span className="text-base">{sec.icon}</span>
+                    <span>{sec.name}</span>
+                    <span className="text-xs text-gray-400 font-normal">{sec.items.length}</span>
+                  </div>
+                  <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
+                    {sec.items.map(renderRow)}
+                  </div>
+                </section>
+              ))}
+            </div>
           ) : (
             <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
-              {filteredMaps.map(map => (
-                <div
-                  key={map.id}
-                  draggable
-                  onDragStart={e => { setDraggingId(map.id); e.dataTransfer.effectAllowed = "move"; }}
-                  onDragEnd={() => { setDraggingId(null); setDragOverId(null); setDragOverFolder(null); }}
-                  onDragOver={e => { if (draggingId && draggingId !== map.id && canReorder) { e.preventDefault(); setDragOverId(map.id); } }}
-                  onDragLeave={() => setDragOverId(cur => (cur === map.id ? null : cur))}
-                  onDrop={e => { if (draggingId && canReorder) { e.preventDefault(); reorderTo(draggingId, map.id); setDraggingId(null); setDragOverId(null); } }}
-                  onClick={() => router.push(`/maps/${map.id}`)}
-                  className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer group transition-colors ${draggingId === map.id ? "opacity-40" : "hover:bg-indigo-50/40"} ${dragOverId === map.id ? "border-t-2 border-indigo-400" : "border-t-2 border-transparent"}`}
-                >
-                  <span className="shrink-0 w-4 text-center text-gray-300 group-hover:text-gray-400 cursor-grab active:cursor-grabbing select-none" title="ドラッグで並び替え・フォルダへ移動">⠿</span>
-                  <span className="shrink-0 text-base w-5 text-center" title={map.mode === "line" ? "LINE" : "マインドマップ"}>
-                    {map.mode === "line" ? "📱" : "🗺️"}
-                  </span>
-
-                  <span className="font-medium text-gray-800 group-hover:text-indigo-600 transition-colors truncate min-w-0">
-                    {map.title}
-                  </span>
-
-                  {map.isPublic && <span className="shrink-0 text-[10px] text-green-600" title="公開中">●公開</span>}
-
-                  <div className="hidden md:flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                    {(map.tags ?? []).slice(0, 3).map(tag => (
-                      <span key={tag} className="group/tag inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-500 rounded text-[11px]">
-                        {tag}
-                        <button onClick={() => removeTag(map.id, tag)} className="opacity-0 group-hover/tag:opacity-100 text-indigo-300 hover:text-indigo-600 leading-none">×</button>
-                      </span>
-                    ))}
-                  </div>
-
-                  <span className="ml-auto shrink-0 text-xs text-gray-400 whitespace-nowrap tabular-nums">
-                    {new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード
-                  </span>
-
-                  {/* フォルダ表示＆移動（所属フォルダは常時表示。未所属はホバー時のみ） */}
-                  <select
-                    value={map.folder ?? ""}
-                    onClick={e => e.stopPropagation()}
-                    onChange={e => moveToFolder(map.id, e.target.value)}
-                    title="フォルダを移動"
-                    className={`shrink-0 text-xs bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 outline-none max-w-[9rem] transition-opacity cursor-pointer ${map.folder ? "opacity-100 text-indigo-500" : "opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-400"}`}
-                  >
-                    <option value="">📁 なし</option>
-                    {folders.map(f => <option key={f.name} value={f.name}>{f.icon} {f.name}</option>)}
-                  </select>
-
-                  <button
-                    onClick={e => deleteMap(e, map.id, map.title)}
-                    title="削除"
-                    className="shrink-0 text-gray-300 hover:text-red-400 transition-colors text-lg leading-none opacity-0 group-hover:opacity-100 w-5"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
+              {filteredMaps.map(renderRow)}
             </div>
           )}
         </main>
