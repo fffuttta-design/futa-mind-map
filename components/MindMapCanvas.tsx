@@ -1979,6 +1979,29 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   const onMouseUp = () => { if (panStart) setPanStart(null); };
   const onMouseLeave = () => { setPanStart(null); };
 
+  // ── タッチ操作（スマホ）: 1本指=パン、2本指=ピンチズーム ──
+  const touchRef = useRef<{ mode: "pan" | "pinch"; sx: number; sy: number; px: number; py: number; dist: number; z: number } | null>(null);
+  const touchDist = (t: React.TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      setNoteHoverPopup(null); setNotePopup(null); setNodeCtxMenu(null); setInsertMenu(null);
+      touchRef.current = { mode: "pan", sx: e.touches[0].clientX, sy: e.touches[0].clientY, px: pan.x, py: pan.y, dist: 0, z: zoom };
+    } else if (e.touches.length === 2) {
+      touchRef.current = { mode: "pinch", sx: 0, sy: 0, px: pan.x, py: pan.y, dist: touchDist(e.touches), z: zoom };
+    }
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    const t = touchRef.current;
+    if (!t) return;
+    if (t.mode === "pan" && e.touches.length === 1) {
+      setPan({ x: t.px + e.touches[0].clientX - t.sx, y: t.py + e.touches[0].clientY - t.sy });
+    } else if (t.mode === "pinch" && e.touches.length === 2) {
+      const d = touchDist(e.touches);
+      setZoom(Math.min(3, Math.max(0.2, t.z * (d / (t.dist || 1)))));
+    }
+  };
+  const onTouchEnd = (e: React.TouchEvent) => { if (e.touches.length === 0) touchRef.current = null; };
+
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     setNoteHoverPopup(null);
@@ -2021,12 +2044,15 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       <svg
         ref={svgRef}
         className="w-full h-full"
-        style={{ cursor: rubberBand ? "crosshair" : panStart ? "grabbing" : "grab" }}
+        style={{ cursor: rubberBand ? "crosshair" : panStart ? "grabbing" : "grab", touchAction: "none" }}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseLeave}
         onWheel={onWheel}
         onContextMenu={onBgContextMenu}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
       >
         <rect width="100%" height="100%" fill="transparent" onMouseDown={onBgMouseDown} />
         <g transform={`translate(${svgSize.w / 2 + pan.x},${svgSize.h / 2 + pan.y}) scale(${zoom})`}>

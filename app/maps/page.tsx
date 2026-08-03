@@ -327,22 +327,29 @@ export default function MapsPage() {
         {map.mode === "line" ? "📱" : "🗺️"}
       </span>
 
-      <span className="font-medium text-gray-800 group-hover:text-indigo-600 transition-colors truncate min-w-0">
-        {map.title}
-      </span>
-
-      {map.isPublic && <span className="shrink-0 text-[10px] text-green-600" title="公開中">●公開</span>}
-
-      <div className="hidden md:flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-        {(map.tags ?? []).slice(0, 3).map(tag => (
-          <span key={tag} className="group/tag inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-500 rounded text-[11px]">
-            {tag}
-            <button onClick={() => removeTag(map.id, tag)} className="opacity-0 group-hover/tag:opacity-100 text-indigo-300 hover:text-indigo-600 leading-none">×</button>
+      {/* タイトル＋（モバイルは日付を下段に） */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="font-medium text-gray-800 group-hover:text-indigo-600 transition-colors truncate min-w-0">
+            {map.title}
           </span>
-        ))}
+          {map.isPublic && <span className="shrink-0 text-[10px] text-green-600" title="公開中">●公開</span>}
+          <div className="hidden md:flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+            {(map.tags ?? []).slice(0, 3).map(tag => (
+              <span key={tag} className="group/tag inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-500 rounded text-[11px]">
+                {tag}
+                <button onClick={() => removeTag(map.id, tag)} className="opacity-0 group-hover/tag:opacity-100 text-indigo-300 hover:text-indigo-600 leading-none">×</button>
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="md:hidden text-[11px] text-gray-400 tabular-nums mt-0.5">
+          {new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード
+          {map.folder && <span className="text-indigo-400"> · {iconOf(map.folder)} {map.folder}</span>}
+        </div>
       </div>
 
-      <span className="ml-auto shrink-0 text-xs text-gray-400 whitespace-nowrap tabular-nums">
+      <span className="hidden md:block shrink-0 text-xs text-gray-400 whitespace-nowrap tabular-nums">
         {new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード
       </span>
 
