@@ -329,7 +329,7 @@ function nodeWidth(node: MindMapNode): number {
   // 全角=約fs px、半角=約0.55fs px として実幅を見積もる（旧: 一律8.5pxで全角を過小評価し見切れていた）
   const maxLineLen = Math.max(...node.text.split("\n").map(l => visualTextLen(l)), 1);
   const base = Math.max(80, Math.min(260 * k, maxLineLen * 13 * k + 24));
-  const cbPad = node.isCheckbox ? 44 : 0;
+  const cbPad = node.isCheckbox ? 20 : 0;
   if (node.shape === "circle") { const cd = NODE_H * 2 + 8; return (fs > 13 ? Math.max(cd, base) : cd) + cbPad; }
   if (node.shape === "diamond") return base + 24 + cbPad;
   return base + cbPad;
@@ -2653,8 +2653,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                           const lh = nodeLineH(node);
                           const totalH = (textLines.length - 1) * lh;
                           const display = line.length > 20 ? line.slice(0, 20) + "…" : line;
-                          // チェックボックスノードは左にボックス分の余白があるので、テキストを右へ寄せて重なりを防ぐ
-                          const cbShift = node.isCheckbox ? 22 : 0;
+                          // チェックボックスノードは左にボックス分の余白があるので、テキストを少し右へ寄せる
+                          const cbShift = node.isCheckbox ? 13 : 0;
                           return (
                             <tspan key={i} x={(node.icon ? 8 : 0) + cbShift} dy={i === 0 ? -totalH / 2 : lh}>
                               {display}
@@ -2732,7 +2732,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                     {/* チェックボックス（isCheckbox=true のノードのテキスト左に表示） */}
                     {node.isCheckbox && (
                       <g
-                        transform={`translate(${-w / 2 + 22}, 0)`}
+                        transform={`translate(${-w / 2 + 18}, 0)`}
                         onMouseDown={e => e.stopPropagation()}
                         onClick={e => { e.stopPropagation(); toggleNodeChecked(node.id); }}
                         style={{ cursor: "pointer" }}
