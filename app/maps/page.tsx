@@ -44,6 +44,8 @@ export default function MapsPage() {
 
   // サイドバー幅（可変・記憶）
   const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_DEFAULT);
+  // モバイル: サイドバーをドロワーで開閉
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { hasUpdate, latestVersion } = useVersionCheck();
 
@@ -369,12 +371,17 @@ export default function MapsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-4 shrink-0">
+      <header className="bg-white border-b border-gray-100 px-3 md:px-6 py-3 flex items-center gap-2 md:gap-4 shrink-0">
+        <button
+          onClick={() => setSidebarOpen(true)}
+          title="フォルダ"
+          className="md:hidden shrink-0 w-9 h-9 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl leading-none"
+        >☰</button>
         <div className="flex items-baseline gap-2 shrink-0">
-          <h1 className="text-xl font-bold text-gray-900">FutaMindMap</h1>
-          <span className="text-xs text-gray-300 font-mono">v{APP_VERSION}</span>
+          <h1 className="text-base md:text-xl font-bold text-gray-900">FutaMindMap</h1>
+          <span className="hidden sm:inline text-xs text-gray-300 font-mono">v{APP_VERSION}</span>
         </div>
-        <div className="flex-1 max-w-md">
+        <div className="flex-1 min-w-0 md:max-w-md">
           <input
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
@@ -407,7 +414,11 @@ export default function MapsPage() {
       )}
 
       <div className="flex flex-1 min-h-0">
-        <aside className="bg-white border-r border-gray-100 p-4 shrink-0 relative" style={{ width: sidebarWidth }}>
+        {/* モバイル: ドロワーの背景 */}
+        {sidebarOpen && <div className="fixed inset-0 bg-black/30 z-30 md:hidden" onClick={() => setSidebarOpen(false)} />}
+        <aside
+          className={`bg-white border-r border-gray-100 p-4 shrink-0 relative overflow-y-auto md:overflow-visible fixed md:relative inset-y-0 left-0 z-40 md:z-auto transform transition-transform duration-200 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}
+          style={{ width: sidebarWidth }}>
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">フォルダ</p>
             <button
@@ -418,7 +429,7 @@ export default function MapsPage() {
           </div>
           <nav className="space-y-0.5">
             <button
-              onClick={() => setSelectedFolder(null)}
+              onClick={() => { setSelectedFolder(null); setSidebarOpen(false); }}
               onDragOver={e => { if (draggingId) { e.preventDefault(); setDragOverFolder(""); } }}
               onDragLeave={() => setDragOverFolder(cur => (cur === "" ? null : cur))}
               onDrop={e => { if (draggingId) { e.preventDefault(); moveToFolder(draggingId, ""); setDraggingId(null); setDragOverFolder(null); } }}
@@ -474,13 +485,16 @@ export default function MapsPage() {
                       className="shrink-0 w-6 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-base leading-none"
                     >{f.icon}</button>
                     <button
-                      onClick={() => setSelectedFolder(f.name)}
-                      className={`flex-1 text-left px-1 py-1.5 rounded-md text-sm truncate transition-colors ${selectedFolder === f.name ? "text-indigo-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
+                      onClick={() => { setSelectedFolder(f.name); setSidebarOpen(false); }}
+                      className={`flex-1 min-w-0 text-left px-1 py-1.5 rounded-md text-sm truncate transition-colors ${selectedFolder === f.name ? "text-indigo-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
                     >
                       {f.name} <span className="text-gray-400 text-xs">({folderCount(f.name)})</span>
                     </button>
-                    <button onClick={() => { setRenamingFolder(f.name); setRenameValue(f.name); }} title="名前を変更" className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-indigo-500 text-xs w-5 h-5 shrink-0 transition-all">✎</button>
-                    <button onClick={() => deleteFolder(f.name)} title="フォルダを削除" className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-sm w-5 h-5 shrink-0 transition-all leading-none">×</button>
+                    {/* 操作ボタンは絶対配置（非表示時に幅を専有せず、名前の見切れを防ぐ） */}
+                    <div className="absolute right-0.5 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0.5 bg-white/95 pl-1 rounded">
+                      <button onClick={() => { setRenamingFolder(f.name); setRenameValue(f.name); }} title="名前を変更" className="text-gray-300 hover:text-indigo-500 text-xs w-5 h-5 leading-none">✎</button>
+                      <button onClick={() => deleteFolder(f.name)} title="フォルダを削除" className="text-gray-300 hover:text-red-400 text-base w-5 h-5 leading-none">×</button>
+                    </div>
                   </>
                 )}
 
@@ -516,23 +530,23 @@ export default function MapsPage() {
           <div
             onMouseDown={startSidebarResize}
             title="ドラッグで幅を調整"
-            className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-indigo-200 active:bg-indigo-300 transition-colors"
+            className="hidden md:block absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-indigo-200 active:bg-indigo-300 transition-colors"
           />
         </aside>
 
-        <main className="flex-1 p-6 lg:p-8 min-w-0">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-800">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 min-w-0 w-full">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h2 className="text-lg font-semibold text-gray-800 min-w-0 truncate">
               {selectedFolder ? `${iconOf(selectedFolder)} ${selectedFolder}` : "すべてのマップ"}
               <span className="text-sm font-normal text-gray-400 ml-2">{filteredMaps.length}件</span>
-              {searchQuery && <span className="text-sm font-normal text-gray-400 ml-2">「{searchQuery}」の検索結果</span>}
+              {searchQuery && <span className="hidden sm:inline text-sm font-normal text-gray-400 ml-2">「{searchQuery}」の検索結果</span>}
             </h2>
             <button
               onClick={() => setShowTemplateDialog(true)}
               disabled={creating}
-              className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm font-medium disabled:opacity-50"
+              className="shrink-0 whitespace-nowrap px-3 md:px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm font-medium disabled:opacity-50"
             >
-              ＋ 新しいマップ
+              ＋ <span className="hidden sm:inline">新しいマップ</span><span className="sm:hidden">新規</span>
             </button>
           </div>
 
