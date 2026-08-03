@@ -273,8 +273,8 @@ export default function MapEditorPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen">
-      <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shrink-0">
+    <div className="flex flex-col h-screen w-screen overflow-hidden">
+      <header className="bg-white border-b border-gray-100 px-3 md:px-4 py-3 flex items-center gap-3 shrink-0 min-w-0">
         <button onClick={async () => { await flushSaves(); router.push("/maps"); }} className="text-gray-400 hover:text-gray-600 transition-colors text-sm shrink-0">
           ← 戻る
         </button>
@@ -283,9 +283,9 @@ export default function MapEditorPage() {
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => saveTitle(title)}
           onKeyDown={(e) => e.key === "Enter" && saveTitle(title)}
-          className="text-lg font-semibold text-gray-800 bg-transparent border-none outline-none focus:bg-gray-50 rounded px-2 py-1 flex-1"
+          className="text-lg font-semibold text-gray-800 bg-transparent border-none outline-none focus:bg-gray-50 rounded px-2 py-1 flex-1 min-w-0"
         />
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0 overflow-x-auto no-scrollbar [&>*]:shrink-0">
           <button
             onClick={() => exportRef.current?.exportSVG()}
             className="px-3 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
@@ -335,8 +335,8 @@ export default function MapEditorPage() {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-hidden relative">
+      <div className="flex flex-1 overflow-hidden min-w-0">
+        <div className="flex-1 overflow-hidden relative min-w-0">
           {/* ① 履歴プレビュー中はバナーを表示して readOnly キャンバスに切り替え（サイドバーはそのまま）*/}
           {historyPreview && (
             <div className="absolute top-0 left-0 right-0 z-10 bg-indigo-50 border-b border-indigo-100 px-4 py-2 flex items-center gap-3 shrink-0">

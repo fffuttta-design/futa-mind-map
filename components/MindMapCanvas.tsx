@@ -317,7 +317,11 @@ function visualTextLen(s: string): number {
 
 function nodeWidth(node: MindMapNode): number {
   if (node.customWidth) return node.customWidth;
-  if (node.noteContent !== undefined) return LIST_MIN_W;
+  if (node.noteContent !== undefined) {
+    // 見出しのみ表示。タイトル幅＋📝(左)ぶんの余白でサイズ（全角=約13px）
+    const len = Math.max(...node.text.split("\n").map(l => visualTextLen(l)), 1);
+    return Math.max(120, Math.min(320, len * 13 + 26 + 24));
+  }
   if (node.listItems) return LIST_MIN_W;
   if (node.imageWidth) return node.imageWidth;
   const fs = node.fontSize ?? 13;
@@ -2261,16 +2265,16 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                     <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={8} fill="white" />
                     <rect x={-w / 2} y={-h / 2} width={w} height={LIST_HEADER_H} rx={8} fill={node.color} />
                     <rect x={-w / 2} y={-h / 2 + LIST_HEADER_H - 8} width={w} height={8} fill={node.color} />
+                    {/* ノート印（左端）。本文はホバーで浮き上がる */}
+                    <text x={-w / 2 + 16} y={-h / 2 + LIST_HEADER_H / 2} textAnchor="middle" dominantBaseline="central" fontSize={12} style={{ pointerEvents: "none" }}>📝</text>
                     {editingId !== node.id && (
-                      <text x={-w / 2 + 10} y={-h / 2 + LIST_HEADER_H / 2}
+                      <text x={-w / 2 + 30} y={-h / 2 + LIST_HEADER_H / 2}
                         dominantBaseline="central" fontSize={13} fontWeight="600" fill="white"
                         style={{ pointerEvents: "none" }}
                       >
-                        {node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text}
+                        {node.text.length > 15 ? node.text.slice(0, 15) + "…" : node.text}
                       </text>
                     )}
-                    {/* ノート印（見出しのみ表示。本文はホバーで浮き上がる） */}
-                    <text x={w / 2 - 15} y={-h / 2 + LIST_HEADER_H / 2} textAnchor="middle" dominantBaseline="central" fontSize={12} style={{ pointerEvents: "none" }}>📝</text>
                     {/* ノート本文（見出しのみ＝高さ0。全文はホバーで右隣ポップアップ／ダブルクリックでモーダル） */}
                     <>
                       {/* クリック/ダブルクリック受付 rect */}
@@ -3187,7 +3191,6 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
               paddingBottom: 6, borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 5 }}>
               <span style={{ background: popNode.color, borderRadius: 3, width: 8, height: 8, display: "inline-block", flexShrink: 0 }} />
               {popNode.text}
-              <span style={{ marginLeft: "auto", fontSize: 10, color: "#94a3b8" }}>{readOnly ? "クリックで全文" : "クリックで編集"}</span>
             </div>
             {/* 本文プレビュー（クリックで前面エディタを開く） */}
             <div
