@@ -405,13 +405,13 @@ export default function MapsPage() {
                     {new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード
                   </span>
 
-                  {/* フォルダ移動（ホバーで表示） */}
+                  {/* フォルダ表示＆移動（所属フォルダは常時表示。未所属はホバー時のみ） */}
                   <select
                     value={map.folder ?? ""}
                     onClick={e => e.stopPropagation()}
                     onChange={e => moveToFolder(map.id, e.target.value)}
                     title="フォルダを移動"
-                    className="shrink-0 text-xs text-gray-400 bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 outline-none max-w-[7rem] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
+                    className={`shrink-0 text-xs bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 outline-none max-w-[8rem] transition-opacity cursor-pointer ${map.folder ? "opacity-100 text-indigo-500" : "opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-400"}`}
                   >
                     <option value="">📁 なし</option>
                     {folders.map(f => <option key={f} value={f}>📁 {f}</option>)}
