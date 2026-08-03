@@ -3184,14 +3184,11 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
         if (!popNode || popNode.noteContent === undefined) return null;
         const lines = parseMdLines(noteContentToMarkdown(popNode.noteContent));
         // ノードの右隣に表示（noteHoverPopup.x は SVGコンテナ内座標でノード右端＋余白）。
-        // コンテナ右端で完全にはみ出す場合のみ、ノードの左側へ回り込ませる保険。
+        // 画面右端をはみ出す時も左へ回り込ませず、右寄りのまま画面内にクランプする（スマホでも右に出る）。
         const POPUP_W = 280;
-        const nodeW = nodeWidth(popNode) * zoom;
         const svgW = svgRef.current?.clientWidth ?? 800;
         const rawX = noteHoverPopup.x;
-        const popX = rawX + POPUP_W > svgW
-          ? noteHoverPopup.x - nodeW - POPUP_W - 8  // ノード左側へ
-          : rawX;
+        const popX = Math.max(8, Math.min(rawX, svgW - POPUP_W - 8));
         return (
           <div
             style={{
