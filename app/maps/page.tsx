@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { MindMap, MindMapNode } from "@/types";
@@ -19,17 +19,35 @@ export default function MapsPage() {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [editingFolderFor, setEditingFolderFor] = useState<string | null>(null);
-  const [editingTagsFor, setEditingTagsFor] = useState<string | null>(null);
-  const [newFolder, setNewFolder] = useState("");
-  const [newTag, setNewTag] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // 空フォルダも保持できるよう、フォルダ名の一覧を端末に保存（マップに紐付く前でも消えない）
+  const [extraFolders, setExtraFolders] = useState<string[]>([]);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const { hasUpdate, latestVersion } = useVersionCheck();
 
   useEffect(() => {
     if (!loading && !user) router.push("/");
   }, [user, loading, router]);
+
+  // フォルダ名一覧のローカル保存の読み込み
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const raw = localStorage.getItem(`fmm-folders-${user.uid}`);
+      if (raw) setExtraFolders(JSON.parse(raw));
+    } catch { /* noop */ }
+  }, [user]);
+
+  const persistFolders = useCallback((names: string[]) => {
+    setExtraFolders(names);
+    if (user) {
+      try { localStorage.setItem(`fmm-folders-${user.uid}`, JSON.stringify(names)); } catch { /* noop */ }
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -43,7 +61,6 @@ export default function MapsPage() {
         setMaps(data);
       },
       (err) => {
-        // 取得失敗（権限拒否など）を画面に出して原因を見えるようにする
         console.error("[fmm:maps] 取得失敗", err);
         setLoadError(`${err.code ?? "error"}: ${err.message}`);
       }
@@ -51,8 +68,13 @@ export default function MapsPage() {
     return unsub;
   }, [user]);
 
-  const folders = useMemo(() => [...new Set(maps.map(m => m.folder).filter(Boolean) as string[])], [maps]);
+  // マップに実在するフォルダ ＋ 空フォルダ（ローカル保存）を統合
+  const folders = useMemo(() => {
+    const fromMaps = maps.map(m => m.folder).filter(Boolean) as string[];
+    return [...new Set([...extraFolders, ...fromMaps])].sort((a, b) => a.localeCompare(b, "ja"));
+  }, [maps, extraFolders]);
   const allTags = useMemo(() => [...new Set(maps.flatMap(m => m.tags ?? []))], [maps]);
+  const folderCount = useCallback((f: string) => maps.filter(m => m.folder === f).length, [maps]);
 
   const filteredMaps = useMemo(() => {
     return maps.filter(m => {
@@ -102,25 +124,14 @@ export default function MapsPage() {
     router.push(`/maps/${ref.id}`);
   };
 
-  const deleteMap = async (e: React.MouseEvent, id: string) => {
+  const deleteMap = async (e: React.MouseEvent, id: string, title: string) => {
     e.stopPropagation();
-    if (!confirm("このマップを削除しますか？")) return;
+    if (!confirm(`「${title}」を削除しますか？`)) return;
     await deleteDoc(doc(db, "maps", id));
   };
 
   const moveToFolder = async (mapId: string, folder: string) => {
     await updateDoc(doc(db, "maps", mapId), { folder: folder || null });
-    setEditingFolderFor(null);
-    setNewFolder("");
-  };
-
-  const addTag = async (mapId: string, tag: string) => {
-    if (!tag.trim()) return;
-    const map = maps.find(m => m.id === mapId);
-    if (!map) return;
-    const tags = [...new Set([...(map.tags ?? []), tag.trim()])];
-    await updateDoc(doc(db, "maps", mapId), { tags });
-    setNewTag("");
   };
 
   const removeTag = async (mapId: string, tag: string) => {
@@ -129,7 +140,48 @@ export default function MapsPage() {
     await updateDoc(doc(db, "maps", mapId), { tags: (map.tags ?? []).filter(t => t !== tag) });
   };
 
+  // ── フォルダ操作 ────────────────────────────────
+  const createFolder = () => {
+    const name = newFolderName.trim();
+    setCreatingFolder(false);
+    setNewFolderName("");
+    if (!name || folders.includes(name)) { if (name) setSelectedFolder(name); return; }
+    persistFolders([...extraFolders, name]);
+    setSelectedFolder(name);
+  };
+
+  const renameFolder = async (oldName: string) => {
+    const name = renameValue.trim();
+    setRenamingFolder(null);
+    setRenameValue("");
+    if (!name || name === oldName) return;
+    // 該当フォルダの全マップを一括で付け替え
+    const targets = maps.filter(m => m.folder === oldName);
+    if (targets.length) {
+      const batch = writeBatch(db);
+      targets.forEach(m => batch.update(doc(db, "maps", m.id), { folder: name }));
+      await batch.commit();
+    }
+    persistFolders([...new Set(extraFolders.filter(f => f !== oldName).concat(name))]);
+    if (selectedFolder === oldName) setSelectedFolder(name);
+  };
+
+  const deleteFolder = async (name: string) => {
+    const count = folderCount(name);
+    if (!confirm(count ? `フォルダ「${name}」を削除しますか？（中の${count}件はフォルダなしに戻ります。マップ自体は消えません）` : `空のフォルダ「${name}」を削除しますか？`)) return;
+    const targets = maps.filter(m => m.folder === name);
+    if (targets.length) {
+      const batch = writeBatch(db);
+      targets.forEach(m => batch.update(doc(db, "maps", m.id), { folder: null }));
+      await batch.commit();
+    }
+    persistFolders(extraFolders.filter(f => f !== name));
+    if (selectedFolder === name) setSelectedFolder(null);
+  };
+
   if (loading) return <div className="flex items-center justify-center min-h-screen text-gray-400 text-sm">読み込み中...</div>;
+
+  const folderBtnBase = "flex-1 text-left px-2.5 py-1.5 rounded-md text-sm truncate transition-colors";
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -162,23 +214,59 @@ export default function MapsPage() {
       )}
 
       <div className="flex flex-1">
-        <aside className="w-52 bg-white border-r border-gray-100 p-4 shrink-0">
-          <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">フォルダ</p>
-          <nav className="space-y-1">
+        <aside className="w-56 bg-white border-r border-gray-100 p-4 shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">フォルダ</p>
+            <button
+              onClick={() => { setCreatingFolder(true); setNewFolderName(""); }}
+              title="新規フォルダ"
+              className="text-gray-400 hover:text-indigo-500 transition-colors text-sm leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-indigo-50"
+            >＋</button>
+          </div>
+          <nav className="space-y-0.5">
             <button
               onClick={() => setSelectedFolder(null)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${selectedFolder === null ? "bg-indigo-50 text-indigo-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
+              className={`w-full text-left px-2.5 py-1.5 rounded-md text-sm transition-colors ${selectedFolder === null ? "bg-indigo-50 text-indigo-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
             >
-              📁 すべて
+              🗂️ すべて <span className="text-gray-400 text-xs">({maps.length})</span>
             </button>
+
+            {creatingFolder && (
+              <input
+                autoFocus
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") createFolder(); if (e.key === "Escape") { setCreatingFolder(false); setNewFolderName(""); } }}
+                onBlur={createFolder}
+                placeholder="フォルダ名..."
+                className="w-full text-sm border border-indigo-300 rounded-md px-2.5 py-1.5 outline-none"
+              />
+            )}
+
             {folders.map(f => (
-              <button
-                key={f}
-                onClick={() => setSelectedFolder(f)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${selectedFolder === f ? "bg-indigo-50 text-indigo-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
-              >
-                📁 {f}
-              </button>
+              <div key={f} className="group flex items-center gap-1">
+                {renamingFolder === f ? (
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") renameFolder(f); if (e.key === "Escape") { setRenamingFolder(null); setRenameValue(""); } }}
+                    onBlur={() => renameFolder(f)}
+                    className="flex-1 text-sm border border-indigo-300 rounded-md px-2.5 py-1.5 outline-none"
+                  />
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setSelectedFolder(f)}
+                      className={`${folderBtnBase} ${selectedFolder === f ? "bg-indigo-50 text-indigo-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
+                    >
+                      📁 {f} <span className="text-gray-400 text-xs">({folderCount(f)})</span>
+                    </button>
+                    <button onClick={() => { setRenamingFolder(f); setRenameValue(f); }} title="名前を変更" className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-indigo-500 text-xs w-5 h-5 shrink-0 transition-all">✎</button>
+                    <button onClick={() => deleteFolder(f)} title="フォルダを削除" className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-sm w-5 h-5 shrink-0 transition-all leading-none">×</button>
+                  </>
+                )}
+              </div>
             ))}
           </nav>
 
@@ -200,11 +288,12 @@ export default function MapsPage() {
           )}
         </aside>
 
-        <main className="flex-1 p-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-gray-800">
+        <main className="flex-1 p-6 lg:p-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-800">
               {selectedFolder ? `📁 ${selectedFolder}` : "すべてのマップ"}
-              {searchQuery && <span className="text-base font-normal text-gray-400 ml-2">「{searchQuery}」の検索結果</span>}
+              <span className="text-sm font-normal text-gray-400 ml-2">{filteredMaps.length}件</span>
+              {searchQuery && <span className="text-sm font-normal text-gray-400 ml-2">「{searchQuery}」の検索結果</span>}
             </h2>
             <button
               onClick={() => setShowTemplateDialog(true)}
@@ -221,90 +310,56 @@ export default function MapsPage() {
               <p>{searchQuery ? "検索結果がありません" : "まだマップがありません"}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
               {filteredMaps.map(map => (
                 <div
                   key={map.id}
                   onClick={() => router.push(`/maps/${map.id}`)}
-                  className="bg-white rounded-xl border border-gray-100 p-5 cursor-pointer hover:shadow-md transition-shadow group relative"
+                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-50/40 cursor-pointer group"
                 >
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-medium text-gray-800 group-hover:text-indigo-600 transition-colors flex-1 pr-2">
-                      {map.title}
-                    </h3>
-                    <button
-                      onClick={e => deleteMap(e, map.id)}
-                      className="text-gray-300 hover:text-red-400 transition-colors text-lg leading-none shrink-0"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-400 mb-3 flex items-center gap-2 flex-wrap">
-                    <span>{new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード</span>
-                    {map.isPublic && <span className="text-green-500">● 公開中</span>}
-                    {map.mode === "line" && <span className="bg-[#06C755] text-white px-1.5 py-0.5 rounded text-[10px] font-semibold">LINE</span>}
-                  </p>
+                  <span className="shrink-0 text-base w-5 text-center" title={map.mode === "line" ? "LINE" : "マインドマップ"}>
+                    {map.mode === "line" ? "📱" : "🗺️"}
+                  </span>
 
-                  <div className="flex flex-wrap gap-1 mb-2" onClick={e => e.stopPropagation()}>
-                    {(map.tags ?? []).map(tag => (
-                      <span key={tag} className="group/tag inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full text-xs">
+                  <span className="font-medium text-gray-800 group-hover:text-indigo-600 transition-colors truncate min-w-0">
+                    {map.title}
+                  </span>
+
+                  {map.isPublic && <span className="shrink-0 text-[10px] text-green-600" title="公開中">●公開</span>}
+
+                  {/* タグ（小さく） */}
+                  <div className="hidden md:flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                    {(map.tags ?? []).slice(0, 3).map(tag => (
+                      <span key={tag} className="group/tag inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-500 rounded text-[11px]">
                         {tag}
-                        <button
-                          onClick={() => removeTag(map.id, tag)}
-                          className="text-indigo-300 hover:text-indigo-600 opacity-0 group-hover/tag:opacity-100 transition-opacity leading-none"
-                        >×</button>
+                        <button onClick={() => removeTag(map.id, tag)} className="opacity-0 group-hover/tag:opacity-100 text-indigo-300 hover:text-indigo-600 leading-none">×</button>
                       </span>
                     ))}
-                    {editingTagsFor === map.id ? (
-                      <input
-                        autoFocus
-                        value={newTag}
-                        onChange={e => setNewTag(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === "Enter") addTag(map.id, newTag);
-                          if (e.key === "Escape") setEditingTagsFor(null);
-                        }}
-                        onBlur={() => setEditingTagsFor(null)}
-                        placeholder="タグ名..."
-                        className="text-xs border border-indigo-300 rounded px-2 py-0.5 outline-none w-20"
-                      />
-                    ) : (
-                      <button
-                        onClick={e => { e.stopPropagation(); setEditingTagsFor(map.id); setNewTag(""); }}
-                        className="text-xs text-gray-300 hover:text-indigo-400 transition-colors opacity-0 group-hover:opacity-100"
-                      >＋タグ</button>
-                    )}
                   </div>
 
-                  <div onClick={e => e.stopPropagation()}>
-                    {editingFolderFor === map.id ? (
-                      <div className="flex gap-1">
-                        <input
-                          autoFocus
-                          value={newFolder}
-                          onChange={e => setNewFolder(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === "Enter") moveToFolder(map.id, newFolder);
-                            if (e.key === "Escape") setEditingFolderFor(null);
-                          }}
-                          onBlur={() => setEditingFolderFor(null)}
-                          placeholder="フォルダ名..."
-                          list={`folders-${map.id}`}
-                          className="text-xs border border-gray-300 rounded px-2 py-0.5 outline-none flex-1"
-                        />
-                        <datalist id={`folders-${map.id}`}>
-                          {folders.map(f => <option key={f} value={f} />)}
-                        </datalist>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => { setEditingFolderFor(map.id); setNewFolder(map.folder ?? ""); }}
-                        className={`text-xs transition-colors ${map.folder ? "text-gray-500 hover:text-indigo-500" : "text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100"}`}
-                      >
-                        📁 {map.folder ?? "フォルダに追加"}
-                      </button>
-                    )}
-                  </div>
+                  <span className="ml-auto shrink-0 text-xs text-gray-400 whitespace-nowrap tabular-nums">
+                    {new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード
+                  </span>
+
+                  {/* フォルダ移動（ホバーで表示） */}
+                  <select
+                    value={map.folder ?? ""}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => moveToFolder(map.id, e.target.value)}
+                    title="フォルダを移動"
+                    className="shrink-0 text-xs text-gray-400 bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 outline-none max-w-[7rem] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
+                  >
+                    <option value="">📁 なし</option>
+                    {folders.map(f => <option key={f} value={f}>📁 {f}</option>)}
+                  </select>
+
+                  <button
+                    onClick={e => deleteMap(e, map.id, map.title)}
+                    title="削除"
+                    className="shrink-0 text-gray-300 hover:text-red-400 transition-colors text-lg leading-none opacity-0 group-hover:opacity-100 w-5"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
@@ -315,7 +370,7 @@ export default function MapsPage() {
       <button
         onClick={() => setShowSettings(true)}
         title="アプリ設定"
-        className="fixed bottom-5 left-5 w-9 h-9 rounded-full bg-white hover:bg-gray-50 border border-gray-200 shadow-md flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all z-40 relative"
+        className="fixed bottom-5 left-5 w-9 h-9 rounded-full bg-white hover:bg-gray-50 border border-gray-200 shadow-md flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all z-40"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3"/>
