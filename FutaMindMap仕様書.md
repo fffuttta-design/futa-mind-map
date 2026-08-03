@@ -3,7 +3,7 @@
 > このドキュメントは **FutaMindMap（ふたマインドマップ）** の全機能・構成・データ構造を網羅した仕様書です。
 > 開発・改修の前に必ず読み込み、機能を変更したら **この仕様書も併せて更新** すること（詳細は `CLAUDE.md`）。
 >
-> - 最終更新基準: アプリ v1.15.1（ノードが文字サイズに追従して自動拡大）/ デスクトップ v1.3.0（NSIS + electron-updater へ移行）
+> - 最終更新基準: アプリ v1.25.0（HOMEの各マップに「🔗 ID」コピーボタン＝スキルの `--update <mapId>` 用）/ デスクトップ v1.3.0（NSIS + electron-updater へ移行）
 > - リポジトリ: `https://github.com/fffuttta-design/futa-mind-map`（ブランチ `main`）
 > - 本番URL（Web）: `https://futa-mind-map.vercel.app`
 
