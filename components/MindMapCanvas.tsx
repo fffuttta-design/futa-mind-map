@@ -3211,13 +3211,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
             }}
             onMouseDown={e => e.stopPropagation()}
           >
-            {/* ヘッダー：ノード名 */}
-            <div style={{ fontSize: 11, fontWeight: 600, color: popNode.color, marginBottom: 8,
-              paddingBottom: 6, borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ background: popNode.color, borderRadius: 3, width: 8, height: 8, display: "inline-block", flexShrink: 0 }} />
-              {popNode.text}
-            </div>
-            {/* 本文プレビュー（クリックで前面エディタを開く） */}
+            {/* 本文プレビュー（クリックで前面エディタを開く）。タイトルは左のノードに出ているので出さない */}
             <div
               style={{ userSelect: "none", cursor: "pointer" }}
               onClick={() => openNoteModal(popNode.id)}
