@@ -333,10 +333,8 @@ function nodeWidth(node: MindMapNode): number {
 
 function nodeHeight(node: MindMapNode): number {
   if (node.noteContent !== undefined) {
-    // ノートノードはプレビュー高さが既定。手動リサイズ（customHeight）があればそれを優先。
-    // 全文はダブルクリックのポップアップで表示・編集する。
-    if (node.customHeight) return Math.max(node.customHeight, LIST_HEADER_H + 28);
-    return LIST_HEADER_H + NOTE_PREVIEW_H;
+    // ノートは見出しのみ表示（本文はカーソルを乗せると右隣に浮き上がるポップアップで見せる）。
+    return LIST_HEADER_H;
   }
   if (node.listItems) {
     if (node.collapsed) return LIST_HEADER_H;
@@ -2230,8 +2228,11 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                   noteHoverHideTimer.current = setTimeout(() => setNoteHoverPopup(null), 180);
                 }}
                 onDoubleClick={e => {
-                  if (readOnly || isImageNode) return;
+                  if (isImageNode) return;
                   e.stopPropagation();
+                  // ノートは本文モーダルを開く（見出しのみ表示のため）。閲覧者も開ける（表示のみ）。
+                  if (node.noteContent !== undefined) { openNoteModal(node.id); return; }
+                  if (readOnly) return;
                   setSelectedIds(new Set([node.id]));
                   setEditingId(node.id);
                   setEditText(node.text);
@@ -2268,7 +2269,9 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                         {node.text.length > 16 ? node.text.slice(0, 16) + "…" : node.text}
                       </text>
                     )}
-                    {/* ノート本文（常にプレビュー数行。全文はホバーで右隣ポップアップ） */}
+                    {/* ノート印（見出しのみ表示。本文はホバーで浮き上がる） */}
+                    <text x={w / 2 - 15} y={-h / 2 + LIST_HEADER_H / 2} textAnchor="middle" dominantBaseline="central" fontSize={12} style={{ pointerEvents: "none" }}>📝</text>
+                    {/* ノート本文（見出しのみ＝高さ0。全文はホバーで右隣ポップアップ／ダブルクリックでモーダル） */}
                     <>
                       {/* クリック/ダブルクリック受付 rect */}
                       <rect
