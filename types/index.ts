@@ -17,6 +17,7 @@ export interface MindMapNode {
   url?: string;
   imageUrl?: string;
   collapsed?: boolean;
+  childrenCollapsed?: boolean; // 子ノード（サブツリー）を折りたたんで隠す
   shape?: "pill" | "rect" | "circle" | "diamond" | "text";
   fontBold?: boolean;
   fontItalic?: boolean;

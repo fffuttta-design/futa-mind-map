@@ -883,7 +883,31 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
     onConnectionsChangeRef.current?.(next.connections ?? connectionsRef.current);
   }, []);
 
-  const getVisibleNodes = useCallback((nodeList: MindMapNode[]) => nodeList, []);
+  // childrenCollapsed が立っているノードの子孫を隠す（折りたたみ表示）
+  const getVisibleNodes = useCallback((nodeList: MindMapNode[]) => {
+    const collapsedIds = nodeList.filter(n => n.childrenCollapsed).map(n => n.id);
+    if (collapsedIds.length === 0) return nodeList;
+    const byParent = new Map<string, MindMapNode[]>();
+    for (const n of nodeList) {
+      if (n.parentId) {
+        const arr = byParent.get(n.parentId);
+        if (arr) arr.push(n); else byParent.set(n.parentId, [n]);
+      }
+    }
+    const hidden = new Set<string>();
+    const stack: string[] = collapsedIds.flatMap(id => (byParent.get(id) ?? []).map(c => c.id));
+    while (stack.length) {
+      const cur = stack.pop()!;
+      if (hidden.has(cur)) continue;
+      hidden.add(cur);
+      for (const c of byParent.get(cur) ?? []) stack.push(c.id);
+    }
+    return nodeList.filter(n => !hidden.has(n.id));
+  }, []);
+
+  const toggleChildrenCollapsed = useCallback((id: string) => {
+    updateNodes(nodesRef.current.map(n => n.id === id ? { ...n, childrenCollapsed: !n.childrenCollapsed } : n));
+  }, [updateNodes]);
 
   const addChild = useCallback((parentId: string) => {
     const parent = nodes.find(n => n.id === parentId);
@@ -897,7 +921,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       color: parent.color,
       shape: defaultShape !== "pill" ? defaultShape : undefined,
     };
-    updateNodes([...nodes.map(n => n.id === parentId ? { ...n, collapsed: false } : n), newNode]);
+    updateNodes([...nodes.map(n => n.id === parentId ? { ...n, collapsed: false, childrenCollapsed: false } : n), newNode]);
     setSelectedIds(new Set([newNode.id]));
     setTimeout(() => { setEditingId(newNode.id); setEditText(newNode.text); }, 50);
   }, [nodes, updateNodes]);
@@ -925,7 +949,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       color: parent.color,
       shape: defaultShape !== "pill" ? defaultShape : undefined,
     };
-    updateNodes([...nodes.map(n => n.id === parentId ? { ...n, collapsed: false } : n), newNode]);
+    updateNodes([...nodes.map(n => n.id === parentId ? { ...n, collapsed: false, childrenCollapsed: false } : n), newNode]);
     setSelectedIds(new Set([newNode.id]));
     setTimeout(() => { setEditingId(newNode.id); setEditText(newNode.text); }, 50);
   }, [nodes, updateNodes]);
@@ -2733,6 +2757,28 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                           </text>
                         </g>
                       ))}
+                    </g>
+                  );
+                })()}
+                {/* 子ノードの折りたたみトグル（子を持つノードのみ・子がある側に表示） */}
+                {(() => {
+                  const kids = nodes.filter(n => n.parentId === node.id);
+                  if (kids.length === 0) return null;
+                  const rightSide = kids.filter(c => c.x >= node.x).length >= kids.length / 2;
+                  const tx = rightSide ? w / 2 + 13 : -w / 2 - 13;
+                  const collapsed = !!node.childrenCollapsed;
+                  return (
+                    <g
+                      transform={`translate(${tx}, 0)`}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); if (!readOnly) toggleChildrenCollapsed(node.id); }}
+                      style={{ cursor: readOnly ? "default" : "pointer" }}
+                    >
+                      <circle r={9} fill="white" stroke={node.color} strokeWidth={1.5} />
+                      <text textAnchor="middle" dominantBaseline="central" fontSize={collapsed ? 10 : 13}
+                        fill={node.color} fontWeight="bold" style={{ pointerEvents: "none" }}>
+                        {collapsed ? kids.length : "−"}
+                      </text>
                     </g>
                   );
                 })()}
