@@ -51,6 +51,7 @@ export default function MapEditorPage() {
   const [showManualSave, setShowManualSave] = useState(false);
   const [manualSaveName, setManualSaveName] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "pending" | "saving" | "ok" | "error">("idle");
   const [saveError, setSaveError] = useState<string>("");
   const { hasUpdate, latestVersion } = useVersionCheck();
@@ -266,6 +267,21 @@ export default function MapEditorPage() {
     setShowManualSave(false);
   };
 
+  // マップIDをコピー（スキルの --update <mapId> に使える）
+  const copyMapId = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(id);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = id; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch { /* noop */ }
+      ta.remove();
+    }
+    setCopiedId(true);
+    setTimeout(() => setCopiedId(false), 1500);
+  }, [id]);
+
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/share/${id}` : "";
 
   if (loading || !map) {
@@ -324,6 +340,30 @@ export default function MapEditorPage() {
             </span>
           )}
         </div>
+
+        {/* 右上：IDコピー ＋ アプリ設定（常に見える固定クラスタ） */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={copyMapId}
+            title={`マップIDをコピー（スキルの更新に使えます）\n${id}`}
+            className={`flex items-center gap-1 text-[11px] font-mono rounded-lg px-2 py-1.5 border transition-all ${copiedId ? "text-green-600 border-green-200 bg-green-50" : "text-gray-500 border-gray-200 bg-gray-50 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50"}`}
+          >
+            {copiedId ? "✓ コピー" : "🔗 ID"}
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            title="アプリ設定"
+            className="relative w-8 h-8 rounded-full bg-gray-50 hover:bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            {hasUpdate && (
+              <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-400 rounded-full border-2 border-white" />
+            )}
+          </button>
+        </div>
       </header>
 
       {showShareUrl && isPublic && (
@@ -380,21 +420,6 @@ export default function MapEditorPage() {
                 nodeBorderWidth={nodeBorderWidth}
               />
           }
-
-          {/* 全体設定ボタン（右下固定） */}
-          <button
-            onClick={() => setShowSettings(true)}
-            title="アプリ設定"
-            className="absolute bottom-4 right-4 w-8 h-8 rounded-full bg-white/80 hover:bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all backdrop-blur-sm z-20"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-            {hasUpdate && (
-              <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-400 rounded-full border-2 border-white" />
-            )}
-          </button>
         </div>
 
         {/* LINE メッセージパネル（LINEモード時は常時表示） */}
