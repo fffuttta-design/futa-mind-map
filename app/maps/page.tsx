@@ -26,6 +26,7 @@ export default function MapsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // フォルダ（名前＋アイコン＋並び順）を端末に保存。空フォルダも保持できる。
   const [folderMeta, setFolderMeta] = useState<FolderMeta[]>([]);
@@ -223,6 +224,22 @@ export default function MapsPage() {
     await updateDoc(doc(db, "maps", mapId), { folder: folder || null });
   };
 
+  // マップIDをコピー（スキルの --update <mapId> に使える）
+  const copyId = useCallback(async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(id);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = id; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch { /* noop */ }
+      ta.remove();
+    }
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(cur => (cur === id ? null : cur)), 1500);
+  }, []);
+
   const removeTag = async (mapId: string, tag: string) => {
     const map = maps.find(m => m.id === mapId);
     if (!map) return;
@@ -343,11 +360,27 @@ export default function MapsPage() {
             ))}
           </div>
         </div>
-        <div className="md:hidden text-[11px] text-gray-400 tabular-nums mt-0.5">
-          {new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード
-          {map.folder && <span className="text-indigo-400"> · {iconOf(map.folder)} {map.folder}</span>}
+        <div className="md:hidden text-[11px] text-gray-400 tabular-nums mt-0.5 flex items-center gap-1.5 flex-wrap">
+          <span>
+            {new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード
+            {map.folder && <span className="text-indigo-400"> · {iconOf(map.folder)} {map.folder}</span>}
+          </span>
+          <button
+            onClick={e => copyId(e, map.id)}
+            className={`shrink-0 leading-none rounded px-1.5 py-0.5 border transition-colors ${copiedId === map.id ? "text-green-600 border-green-200 bg-green-50" : "text-indigo-400 border-indigo-100 bg-indigo-50/60 active:bg-indigo-100"}`}
+          >
+            {copiedId === map.id ? "✓ コピー済" : "🔗 ID"}
+          </button>
         </div>
       </div>
+
+      <button
+        onClick={e => copyId(e, map.id)}
+        title={`マップIDをコピー（スキルの更新に使えます）\n${map.id}`}
+        className={`hidden md:flex shrink-0 items-center gap-1 text-[11px] font-mono rounded px-1.5 py-0.5 border transition-all ${copiedId === map.id ? "opacity-100 text-green-600 border-green-200 bg-green-50" : "opacity-0 group-hover:opacity-100 text-gray-400 border-transparent hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50"}`}
+      >
+        {copiedId === map.id ? "✓ コピー" : "🔗 ID"}
+      </button>
 
       <span className="hidden md:block shrink-0 text-xs text-gray-400 whitespace-nowrap tabular-nums">
         {new Date(map.updatedAt).toLocaleDateString("ja-JP")} · {map.nodes.length}ノード
