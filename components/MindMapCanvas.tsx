@@ -21,6 +21,7 @@ interface Props {
   edgeStyle?: "curve" | "straight";
   defaultShape?: "pill" | "rect" | "circle" | "diamond" | "text";
   nodeBorderWidth?: number;
+  organicStyle?: boolean;   // 全体を「枠なし手描き風」にする（中心以外を枠なし＋枝を下線化）
   initialAreas?: CanvasArea[];
   onAreasChange?: (areas: CanvasArea[]) => void;
   initialConnections?: Connection[];
@@ -368,6 +369,12 @@ function nodeHeight(node: MindMapNode): number {
   return base;
 }
 
+// 実効的なノード形状。organic（手描き風）が有効なら、中心以外（parentIdあり）を強制的に「枠なし」にする。
+function effShape(node: MindMapNode, organic = false): "pill" | "rect" | "circle" | "diamond" | "text" {
+  if (organic && node.parentId) return "text";
+  return node.shape ?? "pill";
+}
+
 /** ④ 親子の相対位置から接続点と方向を計算 */
 function calcEdgePoints(parent: MindMapNode, child: MindMapNode) {
   const pw = nodeWidth(parent), ph = nodeHeight(parent);
@@ -404,9 +411,9 @@ function makeEdgePath(x1: number, y1: number, x2: number, y2: number, v: boolean
 
 // 親→子の枝パス。枠なし(shape="text")の子は、枝を「テキストの下線」として引き、
 // 手描き風（オーガニック）のマインドマップにする（枠付きノードは従来どおり）。
-function branchPath(parent: MindMapNode, child: MindMapNode, style: "curve" | "straight" = "curve"): string {
+function branchPath(parent: MindMapNode, child: MindMapNode, style: "curve" | "straight" = "curve", organic = false): string {
   const { x1, y1, x2, y2, v } = calcEdgePoints(parent, child);
-  if (child.shape === "text") {
+  if (effShape(child, organic) === "text") {
     const cw = nodeWidth(child), ch = nodeHeight(child);
     const uy = child.y + ch / 2 - 3;                          // テキスト直下の下線Y
     const leftIsNear = parent.x <= child.x;                   // 親に近いのは左端か
@@ -417,11 +424,11 @@ function branchPath(parent: MindMapNode, child: MindMapNode, style: "curve" | "s
   return makeEdgePath(x1, y1, x2, y2, v, style);
 }
 
-function NodeShape({ node, w, h, isSelected, borderWidth = 0 }: { node: MindMapNode; w: number; h: number; isSelected: boolean; borderWidth?: number }) {
+function NodeShape({ node, w, h, isSelected, borderWidth = 0, organic = false }: { node: MindMapNode; w: number; h: number; isSelected: boolean; borderWidth?: number; organic?: boolean }) {
   const fill = node.color;
   const stroke = isSelected ? "#1e293b" : (borderWidth > 0 ? "#000000" : "transparent");
   const sw = isSelected ? 2.5 : borderWidth;
-  switch (node.shape ?? "pill") {
+  switch (effShape(node, organic)) {
     case "rect":
       return <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={4} fill={fill} stroke={stroke} strokeWidth={sw} />;
     case "circle": {
@@ -452,7 +459,7 @@ function EdgeLabel({ mx, my, text, fontSize = 12, onEdit, readOnly }: { mx: numb
   );
 }
 
-function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = "curve", connections: Connection[] = []): string {
+function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = "curve", connections: Connection[] = [], organic = false): string {
   const pad = 60;
   const xs = nodes.map(n => [n.x - nodeWidth(n) / 2, n.x + nodeWidth(n) / 2]).flat();
   const ys = nodes.map(n => [n.y - nodeHeight(n) / 2, n.y + nodeHeight(n) / 2]).flat();
@@ -471,7 +478,7 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
   const edges = nodes.filter(n => n.parentId && vids.has(n.parentId)).map(n => {
     const p = nodes.find(x => x.id === n.parentId)!;
     const { x1, y1, x2, y2 } = calcEdgePoints(p, n);
-    return `<path d="${branchPath(p, n, edgeStyle)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>${labelSVG(x1, y1, x2, y2, n.edgeLabel, n.edgeLabelFontSize)}`;
+    return `<path d="${branchPath(p, n, edgeStyle, organic)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>${labelSVG(x1, y1, x2, y2, n.edgeLabel, n.edgeLabelFontSize)}`;
   }).join("\n");
 
   // 関連線（通常のエッジと同じ：実線・つなぎ元ノードの色・薄め）
@@ -484,14 +491,17 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
 
   const nodeEls = nodes.map(node => {
     const w = nodeWidth(node), h = nodeHeight(node);
-    const fs = node.fontSize ?? 13, fw = node.fontBold ? "bold" : "500", tc = node.textColor ?? "white";
+    const sh = effShape(node, organic);
+    const fs = node.fontSize ?? 13, fw = node.fontBold ? "bold" : "500";
+    const tc = sh === "text" ? (node.textColor ?? node.color) : (node.textColor ?? "white");
     const iconEl = node.icon ? `<text x="${node.x - w / 2 + 16}" y="${node.y}" text-anchor="middle" dominant-baseline="middle" font-size="14">${node.icon}</text>` : "";
     const tx = node.icon ? node.x + 8 : node.x;
     let shapeEl = "";
-    switch (node.shape ?? "pill") {
+    switch (sh) {
       case "rect": shapeEl = `<rect x="${node.x - w / 2}" y="${node.y - h / 2}" width="${w}" height="${h}" rx="4" fill="${node.color}"/>`; break;
       case "circle": { const r = Math.max(w, h) / 2; shapeEl = `<circle cx="${node.x}" cy="${node.y}" r="${r}" fill="${node.color}"/>`; break; }
       case "diamond": shapeEl = `<polygon points="${node.x},${node.y - h / 2} ${node.x + w / 2},${node.y} ${node.x},${node.y + h / 2} ${node.x - w / 2},${node.y}" fill="${node.color}"/>`; break;
+      case "text": shapeEl = ""; break;   // 枠なし＝テキストのみ（枝が下線になる）
       default: shapeEl = `<rect x="${node.x - w / 2}" y="${node.y - h / 2}" width="${w}" height="${h}" rx="${h / 2}" fill="${node.color}"/>`;
     }
     const textLines = node.text.split("\n");
@@ -507,7 +517,7 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${connEls}\n${nodeEls}\n</svg>`;
 }
 
-export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, initialAreas, onAreasChange, initialConnections, onConnectionsChange, onNoteOpen, tagGroups = [], tagDefs = [], friendFields = [], onAddTagDef, onAddFriendField }: Props) {
+export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, organicStyle = false, initialAreas, onAreasChange, initialConnections, onConnectionsChange, onNoteOpen, tagGroups = [], tagDefs = [], friendFields = [], onAddTagDef, onAddFriendField }: Props) {
   const [nodes, setNodes] = useState<MindMapNode[]>(initialNodes);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1463,12 +1473,12 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
 
   const exportSVG = useCallback(() => {
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([buildExportSVG(nodes, edgeStyle, connectionsRef.current)], { type: "image/svg+xml" }));
+    a.href = URL.createObjectURL(new Blob([buildExportSVG(nodes, edgeStyle, connectionsRef.current, organicStyle)], { type: "image/svg+xml" }));
     a.download = "mindmap.svg"; a.click();
-  }, [nodes, edgeStyle]);
+  }, [nodes, edgeStyle, organicStyle]);
 
   const exportPNG = useCallback(() => {
-    const s = buildExportSVG(nodes, edgeStyle, connectionsRef.current);
+    const s = buildExportSVG(nodes, edgeStyle, connectionsRef.current, organicStyle);
     const pad = 60;
     const xs = nodes.map(n => [n.x - nodeWidth(n) / 2, n.x + nodeWidth(n) / 2]).flat();
     const ys = nodes.map(n => [n.y - nodeHeight(n) / 2, n.y + nodeHeight(n) / 2]).flat();
@@ -1487,7 +1497,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       URL.revokeObjectURL(url);
     };
     img.src = url;
-  }, [nodes]);
+  }, [nodes, edgeStyle, organicStyle]);
 
   useEffect(() => {
     if (exportRef) exportRef.current = { exportSVG, exportPNG };
@@ -2227,7 +2237,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
           {visible.filter(n => n.parentId && visibleIds.has(n.parentId)).map(n => {
             const p = nodes.find(x => x.id === n.parentId)!;
             const { x1, y1, x2, y2 } = calcEdgePoints(p, n);
-            const d = branchPath(p, n, edgeStyle);
+            const d = branchPath(p, n, edgeStyle, organicStyle);
             const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
             const editingThis = editingEdgeLabel?.kind === "edge" && editingEdgeLabel.id === n.id;
             return (
@@ -2669,7 +2679,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                   </>
                 ) : (
                   <>
-                    <NodeShape node={node} w={w} h={h} isSelected={isSelected} borderWidth={nodeBorderWidth} />
+                    <NodeShape node={node} w={w} h={h} isSelected={isSelected} borderWidth={nodeBorderWidth} organic={organicStyle} />
                     {node.icon && (
                       <text x={-w / 2 + 16} textAnchor="middle" dominantBaseline="middle" fontSize={14} style={{ pointerEvents: "none" }}>{node.icon}</text>
                     )}
@@ -2677,7 +2687,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                       <text
                         textAnchor="middle"
                         dominantBaseline="central"
-                        fill={node.shape === "text" ? (node.textColor ?? node.color) : (node.textColor ?? "white")}
+                        fill={effShape(node, organicStyle) === "text" ? (node.textColor ?? node.color) : (node.textColor ?? "white")}
                         fontSize={node.fontSize ?? 13}
                         fontWeight={node.fontBold ? "bold" : "500"}
                         fontStyle={node.fontItalic ? "italic" : "normal"}

@@ -38,7 +38,9 @@ export default function MapEditorPage() {
   const [edgeStyle, setEdgeStyle] = useState<"curve" | "straight">("curve");
   const [defaultShape, setDefaultShape] = useState<"pill" | "rect" | "circle" | "diamond" | "text">("pill");
   const [nodeBorderWidth, setNodeBorderWidth] = useState<number>(0);
+  const [organicStyle, setOrganicStyle] = useState<boolean>(false);
   const [showPageSettings, setShowPageSettings] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showAiGenerate, setShowAiGenerate] = useState(false);
   const [showTagMaster, setShowTagMaster] = useState(false);
   const [showShareUrl, setShowShareUrl] = useState(false);
@@ -83,6 +85,7 @@ export default function MapEditorPage() {
         setEdgeStyle(data.edgeStyle ?? "curve");
         setDefaultShape(data.defaultShape ?? "pill");
         setNodeBorderWidth(data.nodeBorderWidth ?? 0);
+        setOrganicStyle(data.organicStyle ?? false);
       }
     });
     return unsub;
@@ -301,35 +304,46 @@ export default function MapEditorPage() {
           onKeyDown={(e) => e.key === "Enter" && saveTitle(title)}
           className="text-lg font-semibold text-gray-800 bg-transparent border-none outline-none focus:bg-gray-50 rounded px-2 py-1 flex-1 min-w-0"
         />
-        <div className="flex items-center gap-2 min-w-0 overflow-x-auto no-scrollbar [&>*]:shrink-0">
-          <button
-            onClick={() => exportRef.current?.exportSVG()}
-            className="px-3 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-          >SVG</button>
-          <button
-            onClick={() => exportRef.current?.exportPNG()}
-            className="px-3 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-          >PNG</button>
+        <div className="flex items-center gap-2 min-w-0 [&>*]:shrink-0">
+          {/* 主要アクション（常時表示） */}
           <button
             onClick={() => setShowAiGenerate(true)}
             className="px-3 py-1.5 text-xs rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors font-semibold"
           >✨ AIで生成</button>
           <button
-            onClick={() => setShowTagMaster(true)}
-            className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-          >🏷️ マスタ管理</button>
-          <button
-            onClick={() => setShowPageSettings(true)}
-            className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-          >🗺️ ページ設定</button>
-          <button
             onClick={togglePublic}
             className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${isPublic ? "bg-green-100 text-green-600 hover:bg-green-200" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
           >{isPublic ? "🔓 公開中" : "🔒 共有"}</button>
-          <button
-            onClick={() => setShowHistory(h => !h)}
-            className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${showHistory ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-          >🕐 履歴</button>
+
+          {/* その他メニュー（まとめ） */}
+          <div className="relative">
+            <button
+              onClick={() => setShowMoreMenu(m => !m)}
+              title="メニュー"
+              className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${showMoreMenu ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+            >☰ メニュー</button>
+            {showMoreMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
+                <div className="absolute right-0 mt-1 z-50 w-48 bg-white rounded-xl shadow-lg border border-gray-100 p-1.5 flex flex-col">
+                  <button onClick={() => { setShowPageSettings(true); setShowMoreMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"><span>🗺️</span><span>ページ設定</span></button>
+                  <button onClick={() => { setShowTagMaster(true); setShowMoreMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"><span>🏷️</span><span>マスタ管理</span></button>
+                  <button onClick={() => { setShowHistory(h => !h); setShowMoreMenu(false); }}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-xs hover:bg-gray-50 flex items-center gap-2 ${showHistory ? "text-indigo-600" : "text-gray-700"}`}><span>🕐</span><span>履歴</span></button>
+                  <div className="border-t border-gray-100 my-1" />
+                  <p className="px-3 pt-0.5 pb-1 text-[10px] text-gray-400">画像で書き出し</p>
+                  <button onClick={() => { exportRef.current?.exportSVG(); setShowMoreMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"><span>🖼️</span><span>SVGで保存</span></button>
+                  <button onClick={() => { exportRef.current?.exportPNG(); setShowMoreMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"><span>🖼️</span><span>PNGで保存</span></button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* 保存ステータス */}
           {saveStatus === "idle" && <span className="text-xs text-gray-300">自動保存</span>}
           {saveStatus === "pending" && <span className="text-xs text-yellow-400">● 保存待ち</span>}
           {saveStatus === "saving" && <span className="text-xs text-blue-400">● 保存中...</span>}
@@ -396,7 +410,7 @@ export default function MapEditorPage() {
             </div>
           )}
           {historyPreview
-            ? <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly edgeStyle={edgeStyle} />
+            ? <MindMapCanvas initialNodes={historyPreview.nodes} onNodesChange={() => {}} readOnly edgeStyle={edgeStyle} organicStyle={organicStyle} />
             : <MindMapCanvas
                 mapId={id}
                 tagGroups={map.tagGroups}
@@ -418,6 +432,7 @@ export default function MapEditorPage() {
                 edgeStyle={edgeStyle}
                 defaultShape={defaultShape}
                 nodeBorderWidth={nodeBorderWidth}
+                organicStyle={organicStyle}
               />
           }
         </div>
@@ -554,6 +569,11 @@ export default function MapEditorPage() {
           edgeStyle={edgeStyle}
           defaultShape={defaultShape}
           nodeBorderWidth={nodeBorderWidth}
+          organicStyle={organicStyle}
+          onOrganicStyleChange={async (v) => {
+            setOrganicStyle(v);
+            await updateDoc(doc(db, "maps", id), { organicStyle: v });
+          }}
           onEdgeStyleChange={async (v) => {
             setEdgeStyle(v);
             await updateDoc(doc(db, "maps", id), { edgeStyle: v });

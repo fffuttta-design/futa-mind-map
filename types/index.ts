@@ -136,6 +136,7 @@ export interface MindMap {
   edgeStyle?: "curve" | "straight";
   defaultShape?: "pill" | "rect" | "circle" | "diamond" | "text";
   nodeBorderWidth?: number;
+  organicStyle?: boolean;   // 全体を「枠なし手描き風」で表示する（ページ設定）
   stickyNotes?: StickyNote[];
   areas?: CanvasArea[];
   connections?: Connection[];

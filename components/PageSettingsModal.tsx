@@ -4,9 +4,11 @@ interface Props {
   edgeStyle: "curve" | "straight";
   defaultShape: "pill" | "rect" | "circle" | "diamond" | "text";
   nodeBorderWidth: number;
+  organicStyle: boolean;
   onEdgeStyleChange: (v: "curve" | "straight") => void;
   onDefaultShapeChange: (v: "pill" | "rect" | "circle" | "diamond" | "text") => void;
   onNodeBorderWidthChange: (v: number) => void;
+  onOrganicStyleChange: (v: boolean) => void;
   onClose: () => void;
 }
 
@@ -26,8 +28,8 @@ const BORDER_OPTIONS = [
 ];
 
 export default function PageSettingsModal({
-  edgeStyle, defaultShape, nodeBorderWidth,
-  onEdgeStyleChange, onDefaultShapeChange, onNodeBorderWidthChange,
+  edgeStyle, defaultShape, nodeBorderWidth, organicStyle,
+  onEdgeStyleChange, onDefaultShapeChange, onNodeBorderWidthChange, onOrganicStyleChange,
   onClose,
 }: Props) {
   return (
@@ -47,6 +49,24 @@ export default function PageSettingsModal({
         </div>
 
         <div className="px-6 py-5 flex flex-col gap-5">
+
+          {/* 手描き風（枠なし）全体トグル */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">見た目</p>
+            <button
+              onClick={() => onOrganicStyleChange(!organicStyle)}
+              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border transition-colors text-left
+                ${organicStyle ? "bg-indigo-50 border-indigo-200" : "bg-gray-50 border-gray-200 hover:bg-gray-100"}`}
+            >
+              <span className="flex flex-col">
+                <span className={`text-sm font-medium ${organicStyle ? "text-indigo-600" : "text-gray-700"}`}>✍️ 手描き風（枠なし）</span>
+                <span className="text-[11px] text-gray-400 mt-0.5">中心以外の枠を外し、枝を文字の下線にします</span>
+              </span>
+              <span className={`relative w-10 h-6 rounded-full shrink-0 transition-colors ${organicStyle ? "bg-indigo-500" : "bg-gray-300"}`}>
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${organicStyle ? "translate-x-4" : ""}`} />
+              </span>
+            </button>
+          </div>
 
           {/* エッジスタイル */}
           <div>
