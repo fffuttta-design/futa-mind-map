@@ -411,8 +411,12 @@ function makeEdgePath(x1: number, y1: number, x2: number, y2: number, v: boolean
 
 // 親→子の枝パス。枠なし(shape="text")の子は、枝を「テキストの下線」として引き、
 // 手描き風（オーガニック）のマインドマップにする（枠付きノードは従来どおり）。
-function branchPath(parent: MindMapNode, child: MindMapNode, style: "curve" | "straight" = "curve", organic = false): string {
-  const { x1, y1, x2, y2, v } = calcEdgePoints(parent, child);
+function branchPath(parent: MindMapNode, child: MindMapNode, style: "curve" | "straight" = "curve", organic = false, origin?: { x: number; y: number }): string {
+  const ep = calcEdgePoints(parent, child);
+  // 折りたたみ玉がある側は、枝の起点を玉の中心にして「玉から線が生える」見た目にする（線が玉を突き抜けない）。
+  const x1 = origin?.x ?? ep.x1;
+  const y1 = origin?.y ?? ep.y1;
+  const { x2, y2, v } = ep;
   if (effShape(child, organic) === "text") {
     const cw = nodeWidth(child), ch = nodeHeight(child);
     const uy = child.y + ch / 2 - 3;                          // テキスト直下の下線Y
@@ -422,6 +426,16 @@ function branchPath(parent: MindMapNode, child: MindMapNode, style: "curve" | "s
     return `${makeEdgePath(x1, y1, nearX, uy, false, style)} L ${farX},${uy}`;
   }
   return makeEdgePath(x1, y1, x2, y2, v, style);
+}
+
+// 折りたたみ玉（−ボタン）がある側なら、その玉の中心座標を返す。無ければ undefined（枝は従来どおりノード端から）。
+function collapseHubOrigin(parent: MindMapNode, child: MindMapNode, siblings: MindMapNode[]): { x: number; y: number } | undefined {
+  if (siblings.length === 0 || parent.childrenCollapsed) return undefined;
+  const rightSide = siblings.filter(c => c.x >= parent.x).length >= siblings.length / 2;
+  const childRight = child.x >= parent.x;
+  if (childRight !== rightSide) return undefined;              // 玉が無い側の子は対象外
+  const bx = parent.x + (rightSide ? nodeWidth(parent) / 2 + 13 : -nodeWidth(parent) / 2 - 13);
+  return { x: bx, y: parent.y };
 }
 
 function NodeShape({ node, w, h, isSelected, borderWidth = 0, organic = false }: { node: MindMapNode; w: number; h: number; isSelected: boolean; borderWidth?: number; organic?: boolean }) {
@@ -2237,7 +2251,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
           {visible.filter(n => n.parentId && visibleIds.has(n.parentId)).map(n => {
             const p = nodes.find(x => x.id === n.parentId)!;
             const { x1, y1, x2, y2 } = calcEdgePoints(p, n);
-            const d = branchPath(p, n, edgeStyle, organicStyle);
+            const origin = collapseHubOrigin(p, n, visible.filter(k => k.parentId === p.id));
+            const d = branchPath(p, n, edgeStyle, organicStyle, origin);
             const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
             const editingThis = editingEdgeLabel?.kind === "edge" && editingEdgeLabel.id === n.id;
             return (
