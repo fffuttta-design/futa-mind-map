@@ -315,12 +315,22 @@ function visualTextLen(s: string): number {
   return n;
 }
 
+// ノートノードのヘッダーに表示するタイトル文字列（長すぎる時だけ末尾を省略）。
+// 幅計算(nodeWidth)と実描画で必ず同じ文字列を使い、見切れ・過大サイズを防ぐ。
+const NOTE_TITLE_MAX = 28;
+function noteTitleDisplay(text: string): string {
+  const first = text.split("\n")[0] ?? "";
+  const chars = [...first];
+  return chars.length > NOTE_TITLE_MAX ? chars.slice(0, NOTE_TITLE_MAX).join("") + "…" : first;
+}
+
 function nodeWidth(node: MindMapNode): number {
   if (node.customWidth) return node.customWidth;
   if (node.noteContent !== undefined) {
-    // 見出しのみ表示。タイトル幅＋📝(左)ぶんの余白でサイズ（全角=約13px）
-    const len = Math.max(...node.text.split("\n").map(l => visualTextLen(l)), 1);
-    return Math.max(120, Math.min(320, len * 13 + 26 + 24));
+    // 見出しのみ表示。実表示タイトルに合わせて枠幅を自動拡張し、名前が見切れないようにする。
+    // 先頭📝＋左余白(30) と 右余白(18) を確保し、太字ぶん全角=約14pxで見積もる。
+    const disp = noteTitleDisplay(node.text);
+    return Math.max(120, Math.min(480, visualTextLen(disp) * 14 + 30 + 18));
   }
   if (node.listItems) return LIST_MIN_W;
   if (node.imageWidth) return node.imageWidth;
@@ -2309,7 +2319,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                         dominantBaseline="central" fontSize={13} fontWeight="600" fill="white"
                         style={{ pointerEvents: "none" }}
                       >
-                        {node.text.length > 15 ? node.text.slice(0, 15) + "…" : node.text}
+                        {noteTitleDisplay(node.text)}
                       </text>
                     )}
                     {/* ノート本文（見出しのみ＝高さ0。全文はホバーで右隣ポップアップ／ダブルクリックでモーダル） */}
@@ -3261,9 +3271,25 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                 <span style={{ background: mNode.color, borderRadius: 4, width: 12, height: 12, display: "inline-block", flexShrink: 0 }} />
                 <span style={{ fontWeight: 700, fontSize: 15, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mNode.text}</span>
                 <span style={{ marginLeft: 8, fontSize: 11, color: "#94a3b8" }}>{readOnly ? "閲覧のみ" : "リアルタイム・自動保存"}</span>
+                {!readOnly && (
+                  <button
+                    onClick={() => {
+                      if (!window.confirm("このノートを削除して通常のノードに戻します。よろしいですか？")) return;
+                      // これ以降のエディタ unmount 保存を無効化してノート復活を防ぐ
+                      openNoteIdRef.current = null;
+                      pushUndo();
+                      const upd = nodesRef.current.map(n => n.id === noteModalId ? { ...n, noteContent: undefined } : n);
+                      setNodes(upd);
+                      onNodesChangeRef.current(upd);
+                      setNoteModalId(null);
+                    }}
+                    style={{ marginLeft: "auto", border: "1px solid #fecaca", background: "#fef2f2", cursor: "pointer", fontSize: 12, fontWeight: 600, lineHeight: 1, color: "#ef4444", padding: "6px 12px", borderRadius: 8, display: "flex", alignItems: "center", gap: 4 }}
+                    title="ノートを削除して通常ノードに戻す"
+                  ><span>🗑</span><span>ノートを削除</span></button>
+                )}
                 <button
                   onClick={() => closeNoteModal()}
-                  style={{ marginLeft: "auto", border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, color: "#64748b", padding: "0 4px" }}
+                  style={{ marginLeft: readOnly ? "auto" : 4, border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, color: "#64748b", padding: "0 4px" }}
                   title="閉じる (Esc)"
                 >×</button>
               </div>
