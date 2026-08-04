@@ -27,6 +27,10 @@ export default function MapsPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // 右クリックのコンテキストメニュー／マップ名のインライン変更
+  const [mapCtxMenu, setMapCtxMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [renamingMapId, setRenamingMapId] = useState<string | null>(null);
+  const [mapRenameValue, setMapRenameValue] = useState("");
 
   // フォルダ（名前＋アイコン＋並び順）を端末に保存。空フォルダも保持できる。
   const [folderMeta, setFolderMeta] = useState<FolderMeta[]>([]);
@@ -224,6 +228,21 @@ export default function MapsPage() {
     await updateDoc(doc(db, "maps", mapId), { folder: folder || null });
   };
 
+  // マップ名を変更（インライン入力／右クリックメニューから）
+  const startRenameMap = (id: string) => {
+    const m = maps.find(x => x.id === id);
+    setMapCtxMenu(null);
+    setRenamingMapId(id);
+    setMapRenameValue(m?.title ?? "");
+  };
+  const commitRenameMap = async (id: string) => {
+    const name = mapRenameValue.trim();
+    setRenamingMapId(null);
+    const m = maps.find(x => x.id === id);
+    if (!m || !name || name === m.title) return;
+    await updateDoc(doc(db, "maps", id), { title: name });
+  };
+
   // マップIDをコピー（スキルの --update <mapId> に使える）
   const copyId = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -336,7 +355,14 @@ export default function MapsPage() {
       onDragOver={e => { if (draggingId && draggingId !== map.id && canReorder && sameFolder(draggingId, map.folder)) { e.preventDefault(); setDragOverId(map.id); } }}
       onDragLeave={() => setDragOverId(cur => (cur === map.id ? null : cur))}
       onDrop={e => { if (draggingId && canReorder && sameFolder(draggingId, map.folder)) { e.preventDefault(); reorderTo(draggingId, map.id); setDraggingId(null); setDragOverId(null); } }}
-      onClick={() => router.push(`/maps/${map.id}`)}
+      onClick={() => { if (renamingMapId !== map.id) router.push(`/maps/${map.id}`); }}
+      onContextMenu={e => {
+        e.preventDefault();
+        const MENU_W = 180, MENU_H = 120;
+        const x = Math.min(e.clientX, window.innerWidth - MENU_W - 8);
+        const y = Math.min(e.clientY, window.innerHeight - MENU_H - 8);
+        setMapCtxMenu({ id: map.id, x, y });
+      }}
       className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer group transition-colors ${draggingId === map.id ? "opacity-40" : "hover:bg-indigo-50/40"} ${dragOverId === map.id ? "border-t-2 border-indigo-400" : "border-t-2 border-transparent"}`}
     >
       <span className="hidden md:block shrink-0 w-4 text-center text-gray-300 group-hover:text-gray-400 cursor-grab active:cursor-grabbing select-none" title="ドラッグで並び替え・フォルダへ移動">⠿</span>
@@ -347,9 +373,28 @@ export default function MapsPage() {
       {/* タイトル＋（モバイルは日付を下段に） */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="font-medium text-gray-800 group-hover:text-indigo-600 transition-colors truncate min-w-0">
-            {map.title}
-          </span>
+          {renamingMapId === map.id ? (
+            <input
+              autoFocus
+              value={mapRenameValue}
+              onClick={e => e.stopPropagation()}
+              onChange={e => setMapRenameValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") { e.preventDefault(); commitRenameMap(map.id); }
+                if (e.key === "Escape") { e.preventDefault(); setRenamingMapId(null); }
+              }}
+              onBlur={() => commitRenameMap(map.id)}
+              className="font-medium text-gray-800 bg-white border border-indigo-300 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-indigo-300 flex-1 min-w-0"
+            />
+          ) : (
+            <span
+              className="font-medium text-gray-800 group-hover:text-indigo-600 transition-colors truncate min-w-0"
+              onDoubleClick={e => { e.stopPropagation(); startRenameMap(map.id); }}
+              title="ダブルクリック／右クリックで名前を変更"
+            >
+              {map.title}
+            </span>
+          )}
           {map.isPublic && <span className="shrink-0 text-[10px] text-green-600" title="公開中">●公開</span>}
           <div className="hidden md:flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
             {(map.tags ?? []).slice(0, 3).map(tag => (
@@ -617,6 +662,39 @@ export default function MapsPage() {
           )}
         </main>
       </div>
+
+      {/* マップ右クリックメニュー */}
+      {mapCtxMenu && (() => {
+        const m = maps.find(x => x.id === mapCtxMenu.id);
+        if (!m) return null;
+        return (
+          <div className="fixed inset-0 z-50" onClick={() => setMapCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setMapCtxMenu(null); }}>
+            <div
+              className="absolute bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 w-44 text-sm"
+              style={{ left: mapCtxMenu.x, top: mapCtxMenu.y }}
+              onClick={e => e.stopPropagation()}
+            >
+              <button
+                onClick={() => startRenameMap(mapCtxMenu.id)}
+                className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-gray-700 flex items-center gap-2"
+              >✏️ 名前を変更</button>
+              <button
+                onClick={e => { copyId(e, mapCtxMenu.id); setMapCtxMenu(null); }}
+                className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-gray-700 flex items-center gap-2"
+              >🔗 IDをコピー</button>
+              <button
+                onClick={() => router.push(`/maps/${mapCtxMenu.id}`)}
+                className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-gray-700 flex items-center gap-2"
+              >📖 開く</button>
+              <div className="my-1 border-t border-gray-100" />
+              <button
+                onClick={e => { deleteMap(e, mapCtxMenu.id, m.title); setMapCtxMenu(null); }}
+                className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-500 flex items-center gap-2"
+              >🗑️ 削除</button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* テンプレート選択ダイアログ */}
       {showTemplateDialog && (
