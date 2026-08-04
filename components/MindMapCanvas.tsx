@@ -50,8 +50,8 @@ const CTX_COLORS = [
 ];
 const CTX_TEXT_COLORS = ["#ffffff","#1e293b","#ef4444","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ec4899"];
 const CTX_SHAPES = [
-  { id: "pill", l: "⬭" }, { id: "rect", l: "▭" }, { id: "circle", l: "⊙" },
-  { id: "diamond", l: "◇" }, { id: "text", l: "T" },
+  { id: "pill", l: "⬭", t: "角丸" }, { id: "rect", l: "▭", t: "四角" }, { id: "circle", l: "⊙", t: "円" },
+  { id: "diamond", l: "◇", t: "ひし形" }, { id: "text", l: "T", t: "枠なし（テキストのみ）" },
 ] as const;
 const CTX_SIZES = [11, 13, 15, 17] as const;
 const PRIORITY_COLOR = "#ef4444";
@@ -402,6 +402,21 @@ function makeEdgePath(x1: number, y1: number, x2: number, y2: number, v: boolean
   return `M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}`;
 }
 
+// 親→子の枝パス。枠なし(shape="text")の子は、枝を「テキストの下線」として引き、
+// 手描き風（オーガニック）のマインドマップにする（枠付きノードは従来どおり）。
+function branchPath(parent: MindMapNode, child: MindMapNode, style: "curve" | "straight" = "curve"): string {
+  const { x1, y1, x2, y2, v } = calcEdgePoints(parent, child);
+  if (child.shape === "text") {
+    const cw = nodeWidth(child), ch = nodeHeight(child);
+    const uy = child.y + ch / 2 - 3;                          // テキスト直下の下線Y
+    const leftIsNear = parent.x <= child.x;                   // 親に近いのは左端か
+    const nearX = child.x + (leftIsNear ? -cw / 2 : cw / 2);  // テキスト手前側の端
+    const farX = child.x + (leftIsNear ? cw / 2 : -cw / 2);   // 反対側の端
+    return `${makeEdgePath(x1, y1, nearX, uy, false, style)} L ${farX},${uy}`;
+  }
+  return makeEdgePath(x1, y1, x2, y2, v, style);
+}
+
 function NodeShape({ node, w, h, isSelected, borderWidth = 0 }: { node: MindMapNode; w: number; h: number; isSelected: boolean; borderWidth?: number }) {
   const fill = node.color;
   const stroke = isSelected ? "#1e293b" : (borderWidth > 0 ? "#000000" : "transparent");
@@ -455,8 +470,8 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
 
   const edges = nodes.filter(n => n.parentId && vids.has(n.parentId)).map(n => {
     const p = nodes.find(x => x.id === n.parentId)!;
-    const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
-    return `<path d="${makeEdgePath(x1, y1, x2, y2, v, edgeStyle)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>${labelSVG(x1, y1, x2, y2, n.edgeLabel, n.edgeLabelFontSize)}`;
+    const { x1, y1, x2, y2 } = calcEdgePoints(p, n);
+    return `<path d="${branchPath(p, n, edgeStyle)}" fill="none" stroke="${n.color}" stroke-width="2" stroke-opacity="0.45"/>${labelSVG(x1, y1, x2, y2, n.edgeLabel, n.edgeLabelFontSize)}`;
   }).join("\n");
 
   // 関連線（通常のエッジと同じ：実線・つなぎ元ノードの色・薄め）
@@ -2211,8 +2226,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
 
           {visible.filter(n => n.parentId && visibleIds.has(n.parentId)).map(n => {
             const p = nodes.find(x => x.id === n.parentId)!;
-            const { x1, y1, x2, y2, v } = calcEdgePoints(p, n);
-            const d = makeEdgePath(x1, y1, x2, y2, v, edgeStyle);
+            const { x1, y1, x2, y2 } = calcEdgePoints(p, n);
+            const d = branchPath(p, n, edgeStyle);
             const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
             const editingThis = editingEdgeLabel?.kind === "edge" && editingEdgeLabel.id === n.id;
             return (
@@ -3615,7 +3630,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                       <p className="text-xs text-gray-400 mb-1">形</p>
                       <div className="flex gap-1">
                         {CTX_SHAPES.map(s => (
-                          <button key={s.id} onClick={() => applyFormat({ shape: s.id })}
+                          <button key={s.id} onClick={() => applyFormat({ shape: s.id })} title={s.t}
                             className={`flex-1 h-7 rounded border text-sm transition-colors ${(ctxNode.shape ?? "pill") === s.id ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-gray-200 text-gray-500 hover:border-gray-300"}`}
                           >{s.l}</button>
                         ))}
