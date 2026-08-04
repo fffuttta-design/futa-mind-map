@@ -1723,26 +1723,37 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
         const SNAP = 8;
         const GUIDE_PAD = 40;
         const newGuides: { type: "h" | "v"; pos: number; from: number; to: number }[] = [];
-        // 単ノードドラッグ時のみスナップ＋ガイド計算
-        if (drag.initialPositions.size === 1) {
-          const [, initPos] = [...drag.initialPositions.entries()][0];
-          const nx = initPos.x + dx;
-          const ny = initPos.y + dy;
+        // 単ノード・複数選択のどちらでも、選択中の各ノード中心を他ノード中心に合わせてスナップ＋ガイド。
+        // まず「一番近い揃い」をX・Yそれぞれ1つ見つけ、グループ全体を同じ量だけずらす（相対位置は保つ）。
+        const initPositions = [...drag.initialPositions.values()];
+        let snapVX = 0, bestVX = Infinity;  // X揃え（垂直線）
+        let snapHY = 0, bestHY = Infinity;  // Y揃え（水平線）
+        for (const p of initPositions) {
+          const nx = p.x + dx, ny = p.y + dy;
           for (const other of otherNodes) {
-            // 水平ガイド（Y中心が揃う）
-            if (Math.abs(ny - other.y) < SNAP) {
-              dy = other.y - initPos.y;
-              const fx = Math.min(nx, other.x) - GUIDE_PAD;
-              const tx = Math.max(nx, other.x) + GUIDE_PAD;
-              newGuides.push({ type: "h", pos: other.y, from: fx, to: tx });
-            }
-            // 垂直ガイド（X中心が揃う）
-            if (Math.abs(nx - other.x) < SNAP) {
-              dx = other.x - initPos.x;
-              const fy = Math.min(ny, other.y) - GUIDE_PAD;
-              const ty = Math.max(ny, other.y) + GUIDE_PAD;
-              newGuides.push({ type: "v", pos: other.x, from: fy, to: ty });
-            }
+            const ex = other.x - nx;
+            if (Math.abs(ex) < SNAP && Math.abs(ex) < Math.abs(bestVX)) { bestVX = ex; snapVX = ex; }
+            const ey = other.y - ny;
+            if (Math.abs(ey) < SNAP && Math.abs(ey) < Math.abs(bestHY)) { bestHY = ey; snapHY = ey; }
+          }
+        }
+        if (bestVX !== Infinity) dx += snapVX;
+        if (bestHY !== Infinity) dy += snapHY;
+        // スナップ後の位置で、揃った他ノードごとにガイド線を作図（グループの端まで伸ばす）
+        const snapped = initPositions.map(p => ({ x: p.x + dx, y: p.y + dy }));
+        const seenV = new Set<number>(), seenH = new Set<number>();
+        for (const other of otherNodes) {
+          const vMatch = snapped.filter(s => Math.abs(s.x - other.x) < 0.5);
+          if (vMatch.length && !seenV.has(other.x)) {
+            const ys = [...vMatch.map(s => s.y), other.y];
+            newGuides.push({ type: "v", pos: other.x, from: Math.min(...ys) - GUIDE_PAD, to: Math.max(...ys) + GUIDE_PAD });
+            seenV.add(other.x);
+          }
+          const hMatch = snapped.filter(s => Math.abs(s.y - other.y) < 0.5);
+          if (hMatch.length && !seenH.has(other.y)) {
+            const xs = [...hMatch.map(s => s.x), other.x];
+            newGuides.push({ type: "h", pos: other.y, from: Math.min(...xs) - GUIDE_PAD, to: Math.max(...xs) + GUIDE_PAD });
+            seenH.add(other.y);
           }
         }
         setGuides(newGuides);
