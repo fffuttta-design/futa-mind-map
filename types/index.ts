@@ -32,6 +32,7 @@ export interface MindMapNode {
   isCheckbox?: boolean;
   checked?: boolean;
   priority?: number;
+  highlight?: boolean;   // 重要ハイライト（枠なし=蛍光ペン下地／枠あり=金色リング）
   listItems?: ListItem[];
   listFontSize?: number;
   listType?: "checkbox" | "numbered" | "bullet";

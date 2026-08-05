@@ -160,6 +160,7 @@ futa-mind-map/
 - **付加要素**: 画像（imageUrl、ローカルアップロード or URL、リサイズ可）、リンク（url）、メモ（note、ホバー説明）、URL アイコン。
 - **チェックボックスノード**: `isCheckbox` でチェック可能なノードに切替。
 - **優先度（priority）**: 数字バッジ（赤）で重要度を表示。右クリックメニューで増減。
+- **重要マーク（highlight）**: 「超重要」ノードを1つ単位で目立たせるハイライト。右クリックメニュー「🖍️ 重要マークを付ける／外す」でトグル（複数選択にも一括適用）。**枠なし（手描き風）ノードは蛍光ペンの下地（黄色マーカー＝`mixBlendMode:multiply`）**、**枠ありノードは金色リング**で強調。画面・SVG/PNG書き出し共通。
 - **折りたたみ（collapsed）**: 子ノードの表示/非表示。
 - **接続線（エッジ）**: 親子を曲線（curve）または直線（straight）で結ぶ（ページ設定で切替）。枠線太さもページ設定で 0/1/2/3px。
 - **線ラベル（edgeLabel）**: 親子エッジの**線をダブルクリック**すると中央にラベル文字を入力できる（例「〜だから」「原因」「含む」等の関係語）。白背景の小さなタグとして線の中点に表示。空文字で確定すると削除。編集ボックスの **−／＋ で文字の大きさ（9〜40px）を変更**できる（`edgeLabelFontSize`）。子ノードの `edgeLabel` / `edgeLabelFontSize` に保存し、Undo/Redo・SVG/PNG エクスポート・公開ページにも反映。
@@ -310,7 +311,7 @@ interface MindMapNode {
   imageWidth?: number; imageHeight?: number; customWidth?: number; customHeight?: number;
   lineMessage?: LineMessageData;   // LINEモードの配信設定
   noteContent?: string;            // ノートノード本文（TipTap JSON 文字列。旧データは簡易Markdown文字列のまま読込可）
-  isCheckbox?: boolean; checked?: boolean; priority?: number;
+  isCheckbox?: boolean; checked?: boolean; priority?: number; highlight?: boolean;
   listItems?: ListItem[];          // リストノード
   listFontSize?: number;
   listType?: "checkbox" | "numbered" | "bullet";

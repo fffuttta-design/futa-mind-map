@@ -521,11 +521,24 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
     const textLines = node.text.split("\n");
     const lh = nodeLineH(node);
     const startY = node.y - (textLines.length - 1) * lh / 2;
+    // 重要ハイライト（枠なし=蛍光ペン下地／枠あり=金色リング）
+    let hlEl = "";
+    if (node.highlight) {
+      if (sh === "text") {
+        const maxLen = Math.max(...textLines.map(l => visualTextLen(l)), 1);
+        const hlW = Math.min(w + 6, maxLen * fs + 16);
+        const hlH = (textLines.length - 1) * lh + fs * 1.4;
+        hlEl = `<rect x="${node.x - hlW / 2}" y="${node.y - hlH / 2}" width="${hlW}" height="${hlH}" rx="5" fill="#fde047" fill-opacity="0.6"/>`;
+      } else {
+        const rx = sh === "circle" ? (h + 6) / 2 : 7;
+        hlEl = `<rect x="${node.x - w / 2 - 3}" y="${node.y - h / 2 - 3}" width="${w + 6}" height="${h + 6}" rx="${rx}" fill="none" stroke="#f59e0b" stroke-width="3" stroke-opacity="0.95"/>`;
+      }
+    }
     const tspans = textLines.map((line, i) => {
       const display = line.length > 20 ? line.slice(0, 20) + "…" : line;
       return `<tspan x="${tx}" y="${startY + i * lh}" dominant-baseline="middle">${display}</tspan>`;
     }).join("");
-    return `${shapeEl}\n${iconEl}\n<text text-anchor="middle" fill="${tc}" font-size="${fs}" font-weight="${fw}" font-family="sans-serif">${tspans}</text>`;
+    return `${sh === "text" ? hlEl : ""}\n${shapeEl}\n${sh !== "text" ? hlEl : ""}\n${iconEl}\n<text text-anchor="middle" fill="${tc}" font-size="${fs}" font-weight="${fw}" font-family="sans-serif">${tspans}</text>`;
   }).join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${connEls}\n${nodeEls}\n</svg>`;
@@ -2694,7 +2707,24 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                   </>
                 ) : (
                   <>
+                    {/* 重要ハイライト：枠なしは蛍光ペンの下地（テキストの後ろ）、枠ありは金色リング */}
+                    {node.highlight && effShape(node, organicStyle) === "text" && (() => {
+                      const fs = node.fontSize ?? 13;
+                      const lh = nodeLineH(node);
+                      const maxLen = Math.max(...textLines.map(l => visualTextLen(l)), 1);
+                      const hlW = Math.min(w + 6, maxLen * fs + 16);
+                      const hlH = (textLines.length - 1) * lh + fs * 1.4;
+                      return (
+                        <rect x={-hlW / 2} y={-hlH / 2} width={hlW} height={hlH} rx={5}
+                          fill="#fde047" opacity={0.6} transform="rotate(-1)"
+                          style={{ pointerEvents: "none", mixBlendMode: "multiply" }} />
+                      );
+                    })()}
                     <NodeShape node={node} w={w} h={h} isSelected={isSelected} borderWidth={nodeBorderWidth} organic={organicStyle} />
+                    {node.highlight && effShape(node, organicStyle) !== "text" && (
+                      <rect x={-w / 2 - 3} y={-h / 2 - 3} width={w + 6} height={h + 6} rx={node.shape === "circle" ? (h + 6) / 2 : 7}
+                        fill="none" stroke="#f59e0b" strokeWidth={3} opacity={0.95} style={{ pointerEvents: "none" }} />
+                    )}
                     {node.icon && (
                       <text x={-w / 2 + 16} textAnchor="middle" dominantBaseline="middle" fontSize={14} style={{ pointerEvents: "none" }}>{node.icon}</text>
                     )}
@@ -3596,6 +3626,12 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
               ><span>🗑</span><span>ノートを削除</span></button>
             </>
           )}
+
+          {/* 重要マーク（ハイライト）トグル */}
+          <button onMouseEnter={() => setCtxFlyout(null)}
+            onClick={() => { applyFormat({ highlight: !ctxNode.highlight }); setNodeCtxMenu(null); }}
+            className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${ctxNode.highlight ? "text-amber-600 bg-amber-50 hover:bg-amber-100" : "text-gray-700 hover:bg-gray-50"}`}
+          ><span>🖍️</span><span>{ctxNode.highlight ? "重要マークを外す" : "重要マークを付ける"}</span></button>
 
           <div className="border-t border-gray-100 my-0.5" />
 
