@@ -2112,6 +2112,33 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeCtxMenu, isBatch, selectedIds]);
 
+  // 枝（対象ノード＋その子孫すべて）を、親ノードの反対側へ左右反転する。
+  // x を「親のx」を軸に鏡像化（newX = 2*parent.x - x）することで、
+  // 枝全体の形を保ったまま右↔左を入れ替える（枝の左右エッジは x の相対位置で自動的に付け替わる）。
+  const flipBranchSide = useCallback((nodeId: string) => {
+    setNodes(prev => {
+      const target = prev.find(n => n.id === nodeId);
+      if (!target || !target.parentId) return prev;         // ルート等、親が無い枝は対象外
+      const parent = prev.find(n => n.id === target.parentId);
+      if (!parent) return prev;
+      // 対象ノードから子孫を収集
+      const ids = new Set<string>([nodeId]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const n of prev) {
+          if (n.parentId && ids.has(n.parentId) && !ids.has(n.id)) { ids.add(n.id); grew = true; }
+        }
+      }
+      const axis = parent.x;
+      const updated = prev.map(n => ids.has(n.id) ? { ...n, x: 2 * axis - n.x } : n);
+      onNodesChangeRef.current(updated);
+      return updated;
+    });
+    pushUndo();
+    localModifiedAt.current = Date.now();
+  }, [pushUndo]);
+
   return (
     <div className="w-full h-full bg-gray-50 relative overflow-hidden select-none">
       <svg
@@ -3632,6 +3659,14 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
             onClick={() => { applyFormat({ highlight: !ctxNode.highlight }); setNodeCtxMenu(null); }}
             className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${ctxNode.highlight ? "text-amber-600 bg-amber-50 hover:bg-amber-100" : "text-gray-700 hover:bg-gray-50"}`}
           ><span>🖍️</span><span>{ctxNode.highlight ? "重要マークを外す" : "重要マークを付ける"}</span></button>
+
+          {/* 枝を親の反対側へ左右反転（子孫ごと）。ルート以外で表示。 */}
+          {!isBatch && ctxNode.parentId && (
+            <button onMouseEnter={() => setCtxFlyout(null)}
+              onClick={() => { flipBranchSide(ctxNode.id); setNodeCtxMenu(null); }}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 text-gray-700 hover:bg-gray-50"
+            ><span>⇄</span><span>枝を左右反転（親の反対側へ）</span></button>
+          )}
 
           <div className="border-t border-gray-100 my-0.5" />
 
