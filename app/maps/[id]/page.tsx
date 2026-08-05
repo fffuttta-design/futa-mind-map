@@ -305,17 +305,7 @@ export default function MapEditorPage() {
           className="text-lg font-semibold text-gray-800 bg-transparent border-none outline-none focus:bg-gray-50 rounded px-2 py-1 flex-1 min-w-0"
         />
         <div className="flex items-center gap-2 min-w-0 [&>*]:shrink-0">
-          {/* 主要アクション（常時表示） */}
-          <button
-            onClick={() => setShowAiGenerate(true)}
-            className="px-3 py-1.5 text-xs rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors font-semibold"
-          >✨ AIで生成</button>
-          <button
-            onClick={togglePublic}
-            className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${isPublic ? "bg-green-100 text-green-600 hover:bg-green-200" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-          >{isPublic ? "🔓 公開中" : "🔒 共有"}</button>
-
-          {/* その他メニュー（まとめ） */}
+          {/* すべての操作を1つのメニューに集約 */}
           <div className="relative">
             <button
               onClick={() => setShowMoreMenu(m => !m)}
@@ -326,6 +316,11 @@ export default function MapEditorPage() {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
                 <div className="absolute right-0 mt-1 z-50 w-48 bg-white rounded-xl shadow-lg border border-gray-100 p-1.5 flex flex-col">
+                  <button onClick={() => { setShowAiGenerate(true); setShowMoreMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-indigo-50 flex items-center gap-2"><span>✨</span><span>AIで生成</span></button>
+                  <button onClick={() => { togglePublic(); setShowMoreMenu(false); }}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-xs hover:bg-gray-50 flex items-center gap-2 ${isPublic ? "text-green-600" : "text-gray-700"}`}><span>{isPublic ? "🔓" : "🔒"}</span><span>{isPublic ? "公開中（クリックで停止）" : "共有する"}</span></button>
+                  <div className="border-t border-gray-100 my-1" />
                   <button onClick={() => { setShowPageSettings(true); setShowMoreMenu(false); }}
                     className="w-full text-left px-3 py-2 rounded-lg text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"><span>🗺️</span><span>ページ設定</span></button>
                   <button onClick={() => { setShowTagMaster(true); setShowMoreMenu(false); }}
@@ -343,11 +338,7 @@ export default function MapEditorPage() {
             )}
           </div>
 
-          {/* 保存ステータス */}
-          {saveStatus === "idle" && <span className="text-xs text-gray-300">自動保存</span>}
-          {saveStatus === "pending" && <span className="text-xs text-yellow-400">● 保存待ち</span>}
-          {saveStatus === "saving" && <span className="text-xs text-blue-400">● 保存中...</span>}
-          {saveStatus === "ok" && <span className="text-xs text-green-500">✓ 保存済み</span>}
+          {/* 保存失敗時のみ表示（普段は非表示。保存漏れの検知用） */}
           {saveStatus === "error" && (
             <span className="text-xs text-red-500 font-semibold" title={saveError}>
               ✕ 保存失敗: {saveError.slice(0, 60)}
