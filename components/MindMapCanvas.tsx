@@ -701,6 +701,8 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
   const redoStack = useRef<HistoryState[]>([]);
   // ローカル編集タイムスタンプ: Firestoreスナップショットによる上書きを防ぐ
   const localModifiedAt = useRef<number>(0);
+  // 現在押されている矢印キーの向き（Tab＋矢印で子を任意方向に生やすため）
+  const heldArrowDir = useRef<"right" | "left" | "top" | "bottom" | null>(null);
 
   const pushUndo = useCallback(() => {
     undoStack.current.push({ nodes: [...nodesRef.current], stickyNotes: [...stickyNotesRef.current], areas: [...areasRef.current], connections: [...connectionsRef.current] });
@@ -1619,7 +1621,12 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
       }
       if (selectedIds.size === 0) return;
       const id = [...selectedIds][0];
-      if (e.key === "Tab") { e.preventDefault(); addChild(id); }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        // 矢印キーを押しながら Tab → その方向に子を生やす。既定（何も押していない）は右。
+        if (heldArrowDir.current) addChildInDirection(id, heldArrowDir.current);
+        else addChild(id);
+      }
       else if (e.key === "Enter") { e.preventDefault(); addSibling(id); }
       else if (e.key === "F2" || e.key === " ") {
         e.preventDefault();
@@ -1630,10 +1637,36 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
         setSelectedIds(new Set()); setInsertMenu(null); setInsertImageMode(false);
         setNotePopup(null); setNodeCtxMenu(null);
       }
+      // 矢印は「Tabと組み合わせる方向指定」なので、選択中はページスクロールさせない
+      else if (e.key.startsWith("Arrow")) { e.preventDefault(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedIds, addChild, addSibling, deleteNodes, nodes, readOnly, undo, redo, selectedStickyId, editingStickyId, selectedAreaId, selectedConnectionId, deleteConnection]);
+  }, [selectedIds, addChild, addChildInDirection, addSibling, deleteNodes, nodes, readOnly, undo, redo, selectedStickyId, editingStickyId, selectedAreaId, selectedConnectionId, deleteConnection]);
+
+  // 矢印キーの押下状態を追跡（Tab＋矢印でノードを任意方向に生やす用）。
+  useEffect(() => {
+    const dirOf = (k: string): "right" | "left" | "top" | "bottom" | null =>
+      k === "ArrowRight" ? "right" : k === "ArrowLeft" ? "left" :
+      k === "ArrowUp" ? "top" : k === "ArrowDown" ? "bottom" : null;
+    const down = (e: KeyboardEvent) => {
+      // テキスト編集中はカーソル移動を邪魔しない
+      const t = e.target as HTMLElement;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const d = dirOf(e.key);
+      if (d) heldArrowDir.current = d;
+    };
+    const up = (e: KeyboardEvent) => { if (dirOf(e.key) === heldArrowDir.current) heldArrowDir.current = null; };
+    const clear = () => { heldArrowDir.current = null; };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", clear);
+    };
+  }, []);
 
   useEffect(() => {
     if (editingId && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
