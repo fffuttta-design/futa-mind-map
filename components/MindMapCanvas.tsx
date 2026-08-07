@@ -45,9 +45,9 @@ const TEXT_PAD = 16;
 
 // 改修② コンテキストメニュー用定数
 const CTX_COLORS = [
-  "#6366f1","#8b5cf6","#ec4899","#ef4444",
-  "#f97316","#f59e0b","#10b981","#14b8a6",
-  "#3b82f6","#06b6d4","#64748b","#1e293b",
+  "#6366f1","#8b5cf6","#a855f7","#d946ef","#ec4899","#f43f5e","#ef4444",
+  "#f97316","#f59e0b","#eab308","#84cc16","#10b981","#14b8a6","#06b6d4",
+  "#0ea5e9","#3b82f6","#78716c","#64748b","#1e293b","#ffffff","#000000",
 ];
 const CTX_TEXT_COLORS = ["#ffffff","#1e293b","#ef4444","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ec4899"];
 const CTX_SHAPES = [
@@ -431,6 +431,10 @@ function branchPath(parent: MindMapNode, child: MindMapNode, style: "curve" | "s
 // 折りたたみ玉（−ボタン）がある側なら、その玉の中心座標を返す。無ければ undefined（枝は従来どおりノード端から）。
 function collapseHubOrigin(parent: MindMapNode, child: MindMapNode, siblings: MindMapNode[]): { x: number; y: number } | undefined {
   if (siblings.length === 0 || parent.childrenCollapsed) return undefined;
+  // 真上／真下方向の子（縦エッジ）は、親の上下中央から枝を出す。
+  // 横にある−玉を起点にすると玉→真上でS字にくねり、かつ「右所属」に見えるため対象外。
+  const dx = child.x - parent.x, dy = child.y - parent.y;
+  if (Math.abs(dx) * 2 < Math.abs(dy)) return undefined;   // calcEdgePoints と同じ縦判定
   const rightSide = siblings.filter(c => c.x >= parent.x).length >= siblings.length / 2;
   const childRight = child.x >= parent.x;
   if (childRight !== rightSide) return undefined;              // 玉が無い側の子は対象外
@@ -3768,7 +3772,7 @@ export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, init
                     {/* ノード色 */}
                     <div>
                       <p className="text-xs text-gray-400 mb-1">ノード色</p>
-                      <div className="grid grid-cols-6 gap-1">
+                      <div className="grid grid-cols-7 gap-1">
                         {CTX_COLORS.map(c => (
                           <button key={c} onClick={() => applyFormat({ color: c })}
                             className="w-6 h-6 rounded-full border border-gray-200 hover:scale-110 transition-transform"
