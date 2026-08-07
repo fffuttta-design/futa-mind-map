@@ -3,7 +3,7 @@
 > このドキュメントは **FutaMindMap（ふたマインドマップ）** の全機能・構成・データ構造を網羅した仕様書です。
 > 開発・改修の前に必ず読み込み、機能を変更したら **この仕様書も併せて更新** すること（詳細は `CLAUDE.md`）。
 >
-> - 最終更新基準: アプリ v1.34.0（真上/真下の子は縦の直線で接続・色プリセットを21色に拡充）/ デスクトップ v1.3.0（NSIS + electron-updater へ移行）
+> - 最終更新基準: アプリ v1.34.1（起動時にログイン画面が一瞬光る不具合を修正）/ デスクトップ v1.3.0（NSIS + electron-updater へ移行）
 > - リポジトリ: `https://github.com/fffuttta-design/futa-mind-map`（ブランチ `main`）
 > - 本番URL（Web）: `https://futa-mind-map.vercel.app`
 

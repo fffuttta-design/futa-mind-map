@@ -14,7 +14,9 @@ export default function Home() {
     }
   }, [user, loading, router]);
 
-  if (loading) {
+  // loading 中、または既にログイン済み（/maps へ転送中）はログイン画面を出さない。
+  // user 復元済みでも1フレームだけログイン画面が描画され「起動時にログイン画面が一瞬光る」原因になるため。
+  if (loading || user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-gray-400 text-sm">読み込み中...</div>
