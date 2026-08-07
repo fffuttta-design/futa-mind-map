@@ -3,7 +3,7 @@
 > このドキュメントは **FutaMindMap（ふたマインドマップ）** の全機能・構成・データ構造を網羅した仕様書です。
 > 開発・改修の前に必ず読み込み、機能を変更したら **この仕様書も併せて更新** すること（詳細は `CLAUDE.md`）。
 >
-> - 最終更新基準: アプリ v1.34.2（縦横エッジの判定を45°境界に緩和し、斜め下の子も縦線で付けやすく）/ デスクトップ v1.3.0（NSIS + electron-updater へ移行）
+> - 最終更新基準: アプリ v1.35.0（Web/デスクトップに自動アップデート通知バナーを追加）/ デスクトップ v1.3.0（NSIS + electron-updater へ移行）
 > - リポジトリ: `https://github.com/fffuttta-design/futa-mind-map`（ブランチ `main`）
 > - 本番URL（Web）: `https://futa-mind-map.vercel.app`
 
@@ -389,6 +389,7 @@ interface MindMapNode {
 - ⚠️ `latest.yml` が無いと自動更新は一切効かない。`nsis.installDir` は electron-builder@26 で書くとビルドが落ちる。
 - 📌 旧ポータブル版（〜desktop-v1.2.1）のユーザーは初回だけ手動で `FutaMindMap-setup.exe` をインストールする必要がある（旧EXEに更新機能が無いため）。以降は自動更新に乗る。
 - Electron 仕様: シングルインスタンス、メニューバー非表示、`setAppUserModelId`、Google/Firebase 認証ポップアップは内部・外部リンクは既定ブラウザで開く。
+- **Web/デスクトップの自動アップデート通知（`components/WebUpdateBanner.tsx`）**: 機能改修のほとんどは Vercel（Web）配信で **EXE シェルは変わらず electron-updater は無反応**になる（開きっぱなしの窓は古いページのまま）。そこでこのバナーが `/api/version` を **起動3秒後＋2分ごと＋窓に戻ってきた（focus/visibilitychange）とき** に取得し、読み込み済み `APP_VERSION` と食い違えば新版公開とみなして上部にバナーを出す。「再読み込み」で最新ページを取り直す（Next.js 資産はハッシュ付きで確実に最新化。再読み込み後は既存 `UpdateToast` が「アップデート完了！」を表示）。「あとで」でその版を sessionStorage に伏せる。**Android ネイティブは APK 更新を `AndroidUpdateBanner` が担当するので本バナーは動作しない。**
 
 ### 12-4. Android
 - APK / Play Store ビルド＆配布（手順は別途）。

@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import UpdateToast from "@/components/UpdateToast";
 import AndroidUpdateBanner from "@/components/AndroidUpdateBanner";
+import WebUpdateBanner from "@/components/WebUpdateBanner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,6 +27,7 @@ export default function RootLayout({
         <AuthProvider>{children}</AuthProvider>
         <UpdateToast />
         <AndroidUpdateBanner />
+        <WebUpdateBanner />
       </body>
     </html>
   );
