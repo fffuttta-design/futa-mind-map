@@ -381,7 +381,9 @@ function calcEdgePoints(parent: MindMapNode, child: MindMapNode) {
   const cw = nodeWidth(child), ch = nodeHeight(child);
   const dx = child.x - parent.x;
   const dy = child.y - parent.y;
-  if (Math.abs(dx) * 2 >= Math.abs(dy)) {
+  // 縦横の判定は45°境界（|dx| >= |dy| で横、それ以外は縦）。
+  // 以前は |dx|*2 >= |dy| で横を優先し過ぎ、少し斜め下に置くとすぐ右所属になった（縦判定が厳しすぎた）。
+  if (Math.abs(dx) >= Math.abs(dy)) {
     return dx >= 0
       ? { x1: parent.x + pw / 2, y1: parent.y,  x2: child.x - cw / 2, y2: child.y,  v: false }
       : { x1: parent.x - pw / 2, y1: parent.y,  x2: child.x + cw / 2, y2: child.y,  v: false };
@@ -434,7 +436,7 @@ function collapseHubOrigin(parent: MindMapNode, child: MindMapNode, siblings: Mi
   // 真上／真下方向の子（縦エッジ）は、親の上下中央から枝を出す。
   // 横にある−玉を起点にすると玉→真上でS字にくねり、かつ「右所属」に見えるため対象外。
   const dx = child.x - parent.x, dy = child.y - parent.y;
-  if (Math.abs(dx) * 2 < Math.abs(dy)) return undefined;   // calcEdgePoints と同じ縦判定
+  if (Math.abs(dx) < Math.abs(dy)) return undefined;   // calcEdgePoints と同じ縦判定（45°境界）
   const rightSide = siblings.filter(c => c.x >= parent.x).length >= siblings.length / 2;
   const childRight = child.x >= parent.x;
   if (childRight !== rightSide) return undefined;              // 玉が無い側の子は対象外
