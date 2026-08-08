@@ -35,7 +35,7 @@ export default function MapEditorPage() {
   const [map, setMap] = useState<MindMap | null>(null);
   const [title, setTitle] = useState("");
   const [isPublic, setIsPublic] = useState(false);
-  const [edgeStyle, setEdgeStyle] = useState<"curve" | "straight">("straight");
+  const [edgeStyle, setEdgeStyle] = useState<"curve" | "straight">("curve");
   const [defaultShape, setDefaultShape] = useState<"pill" | "rect" | "circle" | "diamond" | "text">("pill");
   const [nodeBorderWidth, setNodeBorderWidth] = useState<number>(0);
   const [organicStyle, setOrganicStyle] = useState<boolean>(false);
@@ -82,7 +82,7 @@ export default function MapEditorPage() {
         setMap(data);
         setTitle(data.title);
         setIsPublic(data.isPublic ?? false);
-        setEdgeStyle(data.edgeStyle ?? "straight");
+        setEdgeStyle(data.edgeStyle ?? "curve");
         setDefaultShape(data.defaultShape ?? "pill");
         setNodeBorderWidth(data.nodeBorderWidth ?? 0);
         setOrganicStyle(data.organicStyle ?? false);
