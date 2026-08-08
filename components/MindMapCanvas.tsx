@@ -441,24 +441,7 @@ function collapseHubOrigin(parent: MindMapNode, child: MindMapNode, siblings: Mi
   const childRight = child.x >= parent.x;
   if (childRight !== rightSide) return undefined;              // 玉が無い側の子は対象外
   const bx = parent.x + (rightSide ? nodeWidth(parent) / 2 + 13 : -nodeWidth(parent) / 2 - 13);
-
-  // 同じ側にぶら下がる子が複数あると、枝が全部この1点（−玉）から出て途中で束になり重なる。
-  // そこで「−玉に付く横向きの子」だけを y で並べ、起点を−玉のまわりに少し縦に散らして分離する。
-  // 単一の子なら従来どおり玉の中心。散らし幅は上限つき（線が玉から離れて見えない範囲）。
-  const hubMates = siblings.filter(c => {
-    const ddx = c.x - parent.x, ddy = c.y - parent.y;
-    return Math.abs(ddx) >= Math.abs(ddy) && (ddx >= 0) === rightSide;   // 同側かつ横向き＝この玉に付く子
-  }).sort((a, b) => a.y - b.y);
-  const n = hubMates.length;
-  let offY = 0;
-  if (n > 1) {
-    const idx = hubMates.findIndex(c => c.id === child.id);
-    const GAP = 15;                                    // 隣り合う起点の間隔
-    const MAX_BAND = 48;                               // 散らし全体の高さ上限（玉から離れすぎない）
-    const scale = (n - 1) * GAP > MAX_BAND ? MAX_BAND / ((n - 1) * GAP) : 1;
-    offY = (idx - (n - 1) / 2) * GAP * scale;          // 玉中心を軸に上下へ均等配置
-  }
-  return { x: bx, y: parent.y + offY };
+  return { x: bx, y: parent.y };
 }
 
 function NodeShape({ node, w, h, isSelected, borderWidth = 0, organic = false }: { node: MindMapNode; w: number; h: number; isSelected: boolean; borderWidth?: number; organic?: boolean }) {
