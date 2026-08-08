@@ -479,7 +479,7 @@ function EdgeLabel({ mx, my, text, fontSize = 12, onEdit, readOnly }: { mx: numb
   );
 }
 
-function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = "curve", connections: Connection[] = [], organic = false): string {
+function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = "straight", connections: Connection[] = [], organic = false): string {
   const pad = 60;
   const xs = nodes.map(n => [n.x - nodeWidth(n) / 2, n.x + nodeWidth(n) / 2]).flat();
   const ys = nodes.map(n => [n.y - nodeHeight(n) / 2, n.y + nodeHeight(n) / 2]).flat();
@@ -550,7 +550,7 @@ function buildExportSVG(nodes: MindMapNode[], edgeStyle: "curve" | "straight" = 
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${minX} ${minY} ${W} ${H}">\n<rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#f9fafb"/>\n${edges}\n${connEls}\n${nodeEls}\n</svg>`;
 }
 
-export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "curve", defaultShape = "pill", nodeBorderWidth = 0, organicStyle = false, initialAreas, onAreasChange, initialConnections, onConnectionsChange, onNoteOpen, tagGroups = [], tagDefs = [], friendFields = [], onAddTagDef, onAddFriendField }: Props) {
+export default function MindMapCanvas({ mapId, initialNodes, onNodesChange, initialStickyNotes, onStickyNotesChange, onSelectionChange, mode = "mindmap", readOnly = false, exportRef, edgeStyle = "straight", defaultShape = "pill", nodeBorderWidth = 0, organicStyle = false, initialAreas, onAreasChange, initialConnections, onConnectionsChange, onNoteOpen, tagGroups = [], tagDefs = [], friendFields = [], onAddTagDef, onAddFriendField }: Props) {
   const [nodes, setNodes] = useState<MindMapNode[]>(initialNodes);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
